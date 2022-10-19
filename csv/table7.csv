@@ -1,0 +1,36 @@
+itpd_e_code,itpd_e_description,ebops_2002,ebops_2010,isic_rev_4
+154,Manufacturing services on physical inputs owned by others,NA,SA,NA
+155,Maintenance and repair services n.i.e.,NA,SB,NA
+156,Transport,205,SC,H
+156,Transport,246,SC,H
+157,Travel,237,SDA,I
+157,Travel,237,SDB3,I
+157,Travel,243,SDA,I
+157,Travel,243,SDB3,I
+158,Construction,249,SE,F
+159,Insurance and pension services,253,SF,K (60%)
+160,Financial services,260,SG,K (40%)
+161,Charges for the use of intellectual property n.i.e.,266,SH,NA
+162,"Telecommunications, computer, and information services",247,SI,J
+162,"Telecommunications, computer, and information services",247,SK1,J
+162,"Telecommunications, computer, and information services",262,SI,J
+162,"Telecommunications, computer, and information services",262,SK1,J
+162,"Telecommunications, computer, and information services",288,SI,J
+162,"Telecommunications, computer, and information services",288,SK1,J
+163,Other business services,272,SJ excl SJ34,M
+163,Other business services,272,SJ excl SJ34,N
+163,Other business services,273,SJ excl SJ34,M
+163,Other business services,273,SJ excl SJ34,N
+164,Heritage and recreational services,NA,SK23a,R
+165,Health services,241,SDB1,Q
+165,Health services,241,SK21,Q
+165,Health services,896,SDB1,Q
+165,Health services,896,SK21,Q
+166,Education services,242,SDB2,P
+166,Education services,242,SK22,P
+166,Education services,895,SDB2,P
+166,Education services,895,SK22,P
+167,Government goods and services n.i.e.,291,SL,NA
+168,Services not allocated,982,SN,NA
+169,Trade-related services,271,SJ34,G
+170,Other personal services,NA,SK24a,S

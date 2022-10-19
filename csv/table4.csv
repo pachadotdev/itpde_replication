@@ -1,0 +1,239 @@
+itpd_e_code,itpd_e_description,fcl_item_code,fcl_title
+1,Wheat,15,Wheat
+2,Rice (raw),27,"Rice, paddy"
+3,Corn,56,Maize
+4,Other cereals,44,Barley
+4,Other cereals,71,Rye
+4,Other cereals,75,Oats
+4,Other cereals,79,Millet
+4,Other cereals,83,Sorghum
+4,Other cereals,89,Buckwheat
+4,Other cereals,92,Quinoa
+4,Other cereals,94,Fonio
+4,Other cereals,97,Triticale
+4,Other cereals,101,Canary seed
+4,Other cereals,103,Mixed grain
+4,Other cereals,108,"Cereals, nes"
+5,Cereal products,17,Bran of Wheat
+5,Cereal products,59,Bran of Maize
+5,Cereal products,81,Bran of Millet
+5,Cereal products,85,Bran of Sorghum
+5,Cereal products,91,Bran of Buckwheat
+5,Cereal products,96,Bran of Fonio
+6,Soybeans,236,Soybeans
+7,Other oilseeds (exc. peanuts),242,"Groundnuts, in shell"
+7,Other oilseeds (exc. peanuts),243,"Groundnuts, Shelled"
+7,Other oilseeds (exc. peanuts),249,Coconuts
+7,Other oilseeds (exc. peanuts),250,"Coconuts, Desiccated"
+7,Other oilseeds (exc. peanuts),251,Copra
+7,Other oilseeds (exc. peanuts),254,Oil palm fruit
+7,Other oilseeds (exc. peanuts),256,Palm kernels
+7,Other oilseeds (exc. peanuts),263,Karite Nuts (Sheanuts)
+7,Other oilseeds (exc. peanuts),265,Castor Beans
+7,Other oilseeds (exc. peanuts),267,Sunflower seed
+7,Other oilseeds (exc. peanuts),270,Rapeseed or colza seed
+7,Other oilseeds (exc. peanuts),275,Tung Nuts
+7,Other oilseeds (exc. peanuts),280,Safflower seed
+7,Other oilseeds (exc. peanuts),289,Sesame seed
+7,Other oilseeds (exc. peanuts),292,Mustard seed
+7,Other oilseeds (exc. peanuts),296,Poppy seed
+7,Other oilseeds (exc. peanuts),299,Melonseed
+7,Other oilseeds (exc. peanuts),310,Kapok fruit
+7,Other oilseeds (exc. peanuts),311,Kapokseed in shell
+7,Other oilseeds (exc. peanuts),312,"Kapokseed, shelled"
+7,Other oilseeds (exc. peanuts),328,Seed Cotton
+7,Other oilseeds (exc. peanuts),329,Cottonseed
+7,Other oilseeds (exc. peanuts),333,Linseed
+7,Other oilseeds (exc. peanuts),336,Hempseed
+7,Other oilseeds (exc. peanuts),339,Oilseeds nes
+8,Animal feed ingredients & pet foods,169,Beet Pulp
+8,Animal feed ingredients & pet foods,628,"Pulp, Waste of Fruit for Feed"
+8,Animal feed ingredients & pet foods,630,Cane Tops
+8,Animal feed ingredients & pet foods,635,Straw & Husks
+8,Animal feed ingredients & pet foods,639,Grasses nes for forage
+8,Animal feed ingredients & pet foods,640,Clover for forage
+8,Animal feed ingredients & pet foods,643,Legumes for silage
+8,Animal feed ingredients & pet foods,646,Turnips for fodder
+8,Animal feed ingredients & pet foods,651,Forage Products nes
+8,Animal feed ingredients & pet foods,652,Vegetable Products for Feed nes
+8,Animal feed ingredients & pet foods,846,Gluten Feed & Meal
+8,Animal feed ingredients & pet foods,858,"Hay (Clover, Lucerne, etc.)"
+8,Animal feed ingredients & pet foods,859,Hay nes
+8,Animal feed ingredients & pet foods,862,Alfalfa Meal & Pellets
+9,Raw & refined sugar & sugar crops,156,Sugar cane
+9,Raw & refined sugar & sugar crops,157,Sugar beet
+10,Other sweeteners,161,Sugar crops nes
+10,Other sweeteners,1182,Honey
+11,"Pulses & legumes(dried, preserved)",176,"Beans, dry"
+11,"Pulses & legumes(dried, preserved)",181,"Broad beans, dry"
+11,"Pulses & legumes(dried, preserved)",187,"Peas, dry"
+11,"Pulses & legumes(dried, preserved)",191,"Chick-peas, dry"
+11,"Pulses & legumes(dried, preserved)",195,"Cow peas, dry"
+11,"Pulses & legumes(dried, preserved)",197,Pigeon peas
+11,"Pulses & legumes(dried, preserved)",201,"Lentils, dry"
+11,"Pulses & legumes(dried, preserved)",203,Bambara beans
+11,"Pulses & legumes(dried, preserved)",205,Vetches
+11,"Pulses & legumes(dried, preserved)",210,Lupins
+11,"Pulses & legumes(dried, preserved)",211,Pulses nes
+12,Fresh fruit,486,Bananas
+12,Fresh fruit,489,Plantains
+12,Fresh fruit,490,Oranges
+12,Fresh fruit,495,"Tangerines, mandarins, clementines, satsumas"
+12,Fresh fruit,497,Lemons & limes
+12,Fresh fruit,507,Grapefruit & pomelo
+12,Fresh fruit,512,Citrus fruit nes
+12,Fresh fruit,515,Apples
+12,Fresh fruit,521,Pears
+12,Fresh fruit,523,Quinces
+12,Fresh fruit,526,Apricots
+12,Fresh fruit,530,Sour cherries
+12,Fresh fruit,531,Cherries
+12,Fresh fruit,534,Peaches & nectarines
+12,Fresh fruit,536,Plums
+12,Fresh fruit,541,"Stone fruit, fresh nes"
+12,Fresh fruit,542,Pome fruit nes
+12,Fresh fruit,544,Strawberries
+12,Fresh fruit,547,Raspberries
+12,Fresh fruit,549,Gooseberries
+12,Fresh fruit,550,Currants
+12,Fresh fruit,552,Blueberries
+12,Fresh fruit,554,Cranberries
+12,Fresh fruit,558,Berries nes
+12,Fresh fruit,560,Grapes
+12,Fresh fruit,561,Raisins
+12,Fresh fruit,567,Watermelons
+12,Fresh fruit,568,"Melons, Cantaloupes"
+12,Fresh fruit,569,Figs
+12,Fresh fruit,571,Mangoes
+12,Fresh fruit,572,Avocados
+12,Fresh fruit,574,Pineapples
+12,Fresh fruit,577,Dates
+12,Fresh fruit,587,Persimmons
+12,Fresh fruit,591,Cashewapple
+12,Fresh fruit,592,Kiwi fruit
+12,Fresh fruit,600,Papayas
+12,Fresh fruit,603,"Fruit, tropical (fresh) nes"
+12,Fresh fruit,619,"Fruit, fresh nes"
+13,Fresh vegetables,116,Potatoes
+13,Fresh vegetables,122,Sweet potatoes
+13,Fresh vegetables,125,Cassava
+13,Fresh vegetables,135,Yautia (Cocoyam)
+13,Fresh vegetables,136,Taro (Cocoyam)
+13,Fresh vegetables,137,Yams
+13,Fresh vegetables,149,Roots & tubers nes
+13,Fresh vegetables,260,Olives
+13,Fresh vegetables,358,Cabbages
+13,Fresh vegetables,366,Artichokes
+13,Fresh vegetables,367,Asparagus
+13,Fresh vegetables,372,Lettuce & chicory
+13,Fresh vegetables,373,Spinach
+13,Fresh vegetables,388,"Tomatoes, fresh"
+13,Fresh vegetables,393,Cauliflowers & broccoli
+13,Fresh vegetables,394,"Pumpkins, squash & gourds"
+13,Fresh vegetables,397,Cucumbers & gherkins
+13,Fresh vegetables,399,Eggplants
+13,Fresh vegetables,401,Chillies & peppers (green)
+13,Fresh vegetables,402,"Onions, shallots (green)"
+13,Fresh vegetables,403,"Onions, dry"
+13,Fresh vegetables,406,Garlic
+13,Fresh vegetables,407,Leeks & other alliaceous vegetables
+13,Fresh vegetables,414,"Beans, green"
+13,Fresh vegetables,417,"Peas, green"
+13,Fresh vegetables,420,"Broad Beans, Green"
+13,Fresh vegetables,423,String Beans
+13,Fresh vegetables,426,Carrot
+13,Fresh vegetables,430,Okra
+13,Fresh vegetables,446,Green Corn (Maize)
+13,Fresh vegetables,449,Mushrooms
+13,Fresh vegetables,459,Chicory roots
+13,Fresh vegetables,463,"Vegetables, Fresh n.e.s."
+14,"Prepared fruits, fruit juices",527,"Apricots, Dried"
+14,"Prepared fruits, fruit juices",537,"Plums, dried"
+14,"Prepared fruits, fruit juices",570,"Figs, Dried"
+14,"Prepared fruits, fruit juices",620,"Fruit, dried nes"
+15,Prepared vegetables,120,Potato Offals
+15,Prepared vegetables,128,"Cassava, Dried"
+16,Nuts,216,Brazil nuts
+16,Nuts,217,Cashew nuts
+16,Nuts,220,Chestnuts
+16,Nuts,221,Almonds
+16,Nuts,222,Walnuts
+16,Nuts,223,Pistachios
+16,Nuts,224,Kolanuts
+16,Nuts,225,Hazelnuts (Filberts)
+16,Nuts,226,Areca nuts
+16,Nuts,229,"Brazil Nuts, Shelled"
+16,Nuts,230,"Cashew Nuts, Shelled"
+16,Nuts,231,"Almonds, Shelled"
+16,Nuts,232,"Walnuts, Shelled"
+16,Nuts,233,"Hazelnuts, Shelled"
+16,Nuts,234,Nuts nes
+17,Live Cattle,866,Cattle
+17,Live Cattle,946,Buffaloes
+18,Live Swine,1034,Pigs
+19,Eggs,1062,Hen eggs
+19,Eggs,1091,"Eggs, exc. hen eggs"
+20,"Other meats, livest. pr. live animals",976,Sheep
+20,"Other meats, livest. pr. live animals",987,"Wool, Greasy"
+20,"Other meats, livest. pr. live animals",1009,"Wool, Hair Waste"
+20,"Other meats, livest. pr. live animals",1016,Goats
+20,"Other meats, livest. pr. live animals",1026,"Skins, Wet-Salted (Goats)"
+20,"Other meats, livest. pr. live animals",1031,Coarse goat hair
+20,"Other meats, livest. pr. live animals",1057,Chickens
+20,"Other meats, livest. pr. live animals",1068,Ducks
+20,"Other meats, livest. pr. live animals",1079,Turkeys
+20,"Other meats, livest. pr. live animals",1083,Pigeons and other birds
+20,"Other meats, livest. pr. live animals",1096,Horses
+20,"Other meats, livest. pr. live animals",1107,Asses
+20,"Other meats, livest. pr. live animals",1110,Mules
+20,"Other meats, livest. pr. live animals",1126,Camels
+20,"Other meats, livest. pr. live animals",1134,"Hides, Wet-Salted (Camels)"
+20,"Other meats, livest. pr. live animals",1136,"Hides nes, Camels"
+20,"Other meats, livest. pr. live animals",1140,Rabbits
+20,"Other meats, livest. pr. live animals",1150,Other rodents
+20,"Other meats, livest. pr. live animals",1157,Other camelids
+20,"Other meats, livest. pr. live animals",1169,"Live animals, non food nes"
+20,"Other meats, livest. pr. live animals",1171,Live animals nes
+20,"Other meats, livest. pr. live animals",1181,Bees
+20,"Other meats, livest. pr. live animals",1183,Beeswax
+20,"Other meats, livest. pr. live animals",1185,"Cocoons, reelable"
+20,"Other meats, livest. pr. live animals",1216,Hides nes
+20,"Other meats, livest. pr. live animals",1218,"Hair, fine"
+21,Cocoa and cocoa products,661,Cocoa beans
+22,"Beverages, nec",656,Coffee green
+22,"Beverages, nec",667,Tea
+22,"Beverages, nec",671,Mate
+23,Cotton,767,Cotton Lint
+23,Cotton,769,Cotton Waste
+24,Tobacco leaves & cigarettes,826,Tobacco leaves
+25,Spices,687,Pepper
+25,Spices,689,Pimento
+25,Spices,692,Vanilla
+25,Spices,693,Cinnamon (canella)
+25,Spices,698,Cloves
+25,Spices,702,"Nutmeg, mace, cardamoms"
+25,Spices,711,"Anise, badian, fennel"
+25,Spices,720,Ginger
+25,Spices,723,Spices nes
+26,"Other ag. products, nec",460,"Vegetable products, fresh or dry nes"
+26,"Other ag. products, nec",461,Carobs
+26,"Other ag. products, nec",654,"Dregs from brewing, distillation"
+26,"Other ag. products, nec",677,Hops
+26,"Other ag. products, nec",748,"Peppermint, Spearmint"
+26,"Other ag. products, nec",754,"Pyrethrum, dried flowers"
+26,"Other ag. products, nec",755,Pyrethrum Extract
+26,"Other ag. products, nec",771,"Flax, raw or retted"
+26,"Other ag. products, nec",777,Hemp fibre and tow
+26,"Other ag. products, nec",778,Kapok fibre
+26,"Other ag. products, nec",780,Jute
+26,"Other ag. products, nec",782,Jute-like fibres
+26,"Other ag. products, nec",788,Ramie
+26,"Other ag. products, nec",789,Sisal
+26,"Other ag. products, nec",800,Agave fibres nes
+26,"Other ag. products, nec",809,Abaca manila hemp
+26,"Other ag. products, nec",813,Coir
+26,"Other ag. products, nec",821,Fibre crops nes
+26,"Other ag. products, nec",836,Natural rubber
+26,"Other ag. products, nec",837,"Rubber, Natural (Dry)"
+26,"Other ag. products, nec",839,Natural gums
+26,"Other ag. products, nec",1293,Crude Organic Materials nes

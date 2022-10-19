@@ -1,0 +1,133 @@
+itpd_e_code,itpd_e_description,isic3,isic4
+34,Processing/preserving of meat,1511,1010
+35,Processing/preserving of fish,1512,1020
+36,Processing/preserving of fruit & vegetables,1513,1030
+37,Vegetable and animal oils and fats,1514,1040
+38,Dairy products,1520,1050
+39,Grain mill products,1531,1061
+40,Starches and starch products,1532,1062
+41,Prepared animal feeds,1533,1080
+42,Bakery products,1541,1071
+43,Sugar,1542,1072
+44,Cocoa chocolate and sugar confectionery,1543,1073
+45,Macaroni noodles & similar products,1544,1074
+46,Other food products n.e.c.,1549,1075
+46,Other food products n.e.c.,1549,1079
+47,Distilling rectifying & blending of spirits,1551,1101
+48,Wines,1552,1102
+49,Malt liquors and malt,1553,1103
+50,Soft drinks; mineral waters,1554,1104
+51,Tobacco products,1600,1200
+52,Textile fibre preparation; textile weaving,1711,1311
+52,Textile fibre preparation; textile weaving,1711,1312
+53,Made-up textile articles except apparel,1721,1392
+54,Carpets and rugs,1722,1393
+55,Cordage rope twine and netting,1723,1394
+56,Other textiles n.e.c.,1729,1399
+57,Knitted and crocheted fabrics and articles,1730,1430
+57,Knitted and crocheted fabrics and articles,1730,1391
+58,Wearing apparel except fur apparel,1810,1410
+59,Dressing & dyeing of fur; processing of fur,1820,1420
+60,Tanning and dressing of leather,1911,1511
+61,Luggage handbags etc.; saddlery & harness,1912,1512
+62,Footwear,1920,1520
+63,Sawmilling and planing of wood,2010,1610
+64,Veneer sheets plywood particle board etc.,2021,1621
+65,Builders’ carpentry and joinery,2022,1622
+66,Wooden containers,2023,1623
+67,Other wood products; articles of cork/straw,2029,1629
+68,Pulp paper and paperboard,2101,1701
+69,Corrugated paper and paperboard,2102,1702
+70,Other articles of paper and paperboard,2109,1709
+71,Publishing of books and other publications,2211,NA
+72,Publishing of newspapers journals etc.,2212,NA
+73,Publishing of recorded media,2213,NA
+74,Other publishing,2219,NA
+75,Printing,2221,1811
+76,Service activities related to printing,2222,1812
+77,Reproduction of recorded media,2230,1820
+78,Coke oven products,2310,1910
+79,Refined petroleum products,2320,1920
+80,Processing of nuclear fuel,2330,NA
+81,Basic chemicals except fertilizers,2411,2011
+82,Fertilizers and nitrogen compounds,2412,2012
+83,Plastics in primary forms; synthetic rubber,2413,2013
+84,Pesticides and other agro-chemical products,2421,2021
+85,Paints varnishes printing ink and mastics,2422,2022
+86,Pharmaceuticals medicinal chemicals etc.,2423,2100
+87,Soap cleaning & cosmetic preparations,2424,2023
+88,Other chemical products n.e.c.,2429,2029
+88,Other chemical products n.e.c.,2429,2680
+89,Man-made fibers,2430,2030
+90,Rubber tires and tubes,2511,2211
+91,Other rubber products,2519,2219
+92,Plastic products,2520,2220
+93,Glass and glass products,2610,2310
+94,Pottery china and earthenware,2691,2393
+95,Refractory ceramic products,2692,2391
+96,Struct.non-refractory clay; ceramic products,2693,2392
+97,Cement lime and plaster,2694,2394
+98,Articles of concrete cement and plaster,2695,2395
+99,Cutting shaping & finishing of stone,2696,2396
+100,Other non-metallic mineral products n.e.c.,2699,2399
+101,Basic iron and steel,2710,2410
+102,Basic precious and non-ferrous metals,2720,2420
+103,Casting of iron and steel,2731,2431
+104,Structural metal products,2811,2511
+105,Tanks reservoirs and containers of metal,2812,2512
+106,Steam generators,2813,2513
+107,Cutlery hand tools and general hardware,2893,2593
+108,Other fabricated metal products n.e.c.,2899,2599
+109,Engines & turbines (not for transport equipment),2911,2811
+110,Pumps compressors taps and valves,2912,2812
+110,Pumps compressors taps and valves,2912,2813
+111,Bearings gears gearing & driving elements,2913,2814
+112,Ovens furnaces and furnace burners,2914,2815
+113,Lifting and handling equipment,2915,2816
+114,Other general purpose machinery,2919,2819
+115,Agricultural and forestry machinery,2921,2821
+116,Machine tools,2922,2818
+116,Machine tools,2922,2822
+117,Machinery for metallurgy,2923,2823
+118,Machinery for mining & construction,2924,2824
+119,Food/beverage/tobacco processing machinery,2925,2825
+120,Machinery for textile apparel and leather,2926,2826
+121,Weapons and ammunition,2927,2520
+121,Weapons and ammunition,2927,3040
+122,Other special purpose machinery,2929,2829
+123,Domestic appliances n.e.c.,2930,2750
+124,Office accounting and computing machinery,3000,2620
+124,Office accounting and computing machinery,3000,2817
+125,Electric motors generators and transformers,3110,2710
+126,Electricity distribution & control apparatus,3120,2733
+127,Insulated wire and cable,3130,2731
+127,Insulated wire and cable,3130,2732
+128,Accumulators primary cells and batteries,3140,2720
+129,Lighting equipment and electric lamps,3150,2740
+130,Other electrical equipment n.e.c.,3190,2790
+131,Electronic valves tubes etc.,3210,2610
+132,TV/radio transmitters; line comm. apparatus,3220,2630
+133,TV and radio receivers and associated goods,3230,2640
+134,Medical surgical and orthopedic equipment,3311,2660
+134,Medical surgical and orthopedic equipment,3311,3250
+135,Measuring/testing/navigating appliances and equipment,3312,2651
+135,Measuring/testing/navigating appliances and equipment,3313,2651
+136,Optical instruments & photographic equipment,3320,2670
+137,Watches and clocks,3330,2652
+138,Motor vehicles,3410,2910
+139,Automobile bodies trailers & semi-trailers,3420,2920
+140,Parts/accessories for automobiles,3430,2930
+141,Building and repairing of ships,3511,3011
+142,Building/repairing of pleasure/sport. boats,3512,3012
+143,Railway/tramway locomotives & rolling stock,3520,3020
+144,Aircraft and spacecraft,3530,3030
+145,Motorcycles,3591,3091
+146,Bicycles and invalid carriages,3592,3092
+147,Other transport equipment n.e.c.,3599,3099
+148,Furniture,3610,3100
+149,Jewelery and related articles,3691,3211
+149,Jewelery and related articles,3691,3212
+150,Musical instruments,3692,3220
+151,Sports goods,3693,3230
+152,Games and toys,3694,3240
+153,Other manufacturing n.e.c.,3699,3290
