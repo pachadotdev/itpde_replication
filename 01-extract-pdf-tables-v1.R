@@ -6,12 +6,12 @@ library(forcats)
 library(tidyr)
 library(readr)
 
-out <- extract_tables(
-  "pdf/Borchert et al. - 2021 - The International Trade and Production Database fo.pdf",
+tables <- extract_tables(
+  "inp/pdf/Borchert et al. - 2021 - The International Trade and Production Database fo.pdf",
   output = "data.frame")
 
 tidy_table <- function(i) {
-  out[[i]] %>%
+  tables[[i]] %>%
     as_tibble() %>%
     clean_names() %>%
     mutate_if(is.numeric, as.character) %>%
@@ -132,12 +132,12 @@ table8 <- tidy_table(16) %>%
 
 # save ----
 
-try(dir.create("csv"))
+try(dir.create("out/csv/article", recursive = T))
 
-write_csv(table1, "csv/table1.csv")
-write_csv(table2, "csv/table2.csv")
-write_csv(table4, "csv/table4.csv")
-write_csv(table5, "csv/table5.csv")
-write_csv(table6, "csv/table6.csv")
-write_csv(table7, "csv/table7.csv")
-write_csv(table8, "csv/table8.csv")
+write_csv(table1, "out/csv/article/table1.csv")
+write_csv(table2, "out/csv/article/table2.csv")
+write_csv(table4, "out/csv/article/table4.csv")
+write_csv(table5, "out/csv/article/table5.csv")
+write_csv(table6, "out/csv/article/table6.csv")
+write_csv(table7, "out/csv/article/table7.csv")
+write_csv(table8, "out/csv/article/table8.csv")

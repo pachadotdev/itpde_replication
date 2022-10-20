@@ -1,8 +1,0 @@
-itpd_e_code,itpd_e_description,isic3,isic_rev_3_description,isic4,isic_rev_4_description
-27,Mining of hard coal,101,Mining and agglomeration of hard coal,51,Mining of hard coal
-28,Mining of lignite,102,Mining and agglomeration of lignite,52,Mining of lignite
-29,Extraction crude oil and gas,111,Extraction crude oil and gas,6,Extraction of crude oil and gas
-30,Mining of iron ores,131,Iron ores,71,Mining of iron ores
-31,Other mining and quarring,190,C-(101 + 102+111 + 131),90,B-(051 + 052+61 + 62+071)
-32,"Electricity prodcn, collcn, and distr.",401,"Electricity prodcn, collcn, and distr.",351,"Electric power generation, transmission"
-33,Gas production and distribution,402,Gas production and distribution,352,Manufacture of gas
