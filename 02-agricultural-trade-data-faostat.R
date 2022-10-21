@@ -69,7 +69,7 @@ fao_data <- fao_data %>%
   left_join(fao_unit_code) %>%
   select(reporter_country_code:element_code, unit_code, y1986:y2020)
 
-# 4.2 convert wide to long ----
+## 4.2 convert wide to long ----
 
 fao_data <- fao_data %>%
   group_by(reporter_country_code) %>%
@@ -129,6 +129,28 @@ fao_data <- fao_data %>%
     import_quantity_no_unit = import_quantity_no
   )
 
+## 4.3 convert country codes ----
+
+fao_country_correspondence <- read_csv("inp/csv/faostat_country_correspondence.csv") %>%
+  clean_names() %>%
+  select(country_code, iso3_code)
+
+fao_data <- fao_data %>%
+  left_join(
+    fao_country_correspondence %>% rename(reporter_iso3 = iso3_code),
+    by = c("reporter_country_code" = "country_code")
+  ) %>%
+  left_join(
+    fao_country_correspondence %>% rename(partner_iso3 = iso3_code),
+    by = c("partner_country_code" = "country_code")
+  ) %>%
+  select(reporter_iso3, partner_iso3, everything()) %>%
+  ungroup() %>%
+  select(-c(reporter_country_code, partner_country_code))
+
+# 5: save ----
+
 try(dir.create("out/rds", recursive = T))
 
 saveRDS(fao_data, "out/rds/fao_data.rds")
+saveRDS(fao_item_code, "out/rds/fao_item_code.rds")
