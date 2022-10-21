@@ -5,6 +5,8 @@ library(dplyr)
 library(tidyr)
 library(purrr)
 
+# 1: Download trade data ----
+
 url <- "https://fenixservices.fao.org/faostat/static/bulkdownloads/Trade_DetailedTradeMatrix_E_All_Data.zip"
 zip <- "inp/zip/faostat_trade_matrix.zip"
 
@@ -18,10 +20,56 @@ if (length(list.files("inp/csv/faostat_trade_matrix")) == 0) {
   archive_extract(zip, dir = "inp/csv/faostat_trade_matrix")
 }
 
+# 2: Download FAOSTAT Commodity List ----
+
+# 3: Download correspondence between FAO country codes and ISO-3 country codes ----
+
+# the file was downloaded from the browser and points to
+# blob:https://www.fao.org/57203009-07f0-4867-9eaf-81a56b990566
+# see image for https://www.fao.org/faostat/en/#data/QV
+# (inp/img/faostats_country_correspondence.png)
+# the file is inp/csv/faostat_country_correspondence.csv
+
+# 4: Tidy data ----
+
 fao_data <- read_csv("inp/csv/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
-  clean_names() %>%
-  filter(element == "Import Value") %>%
-  select(reporter_country_code, partner_country_code, item_code_cpc, y1986:y2020)
+  clean_names()
+
+## 4.1 tidy codes ----
+
+fao_element_code <- fao_data %>%
+  select(element_code, element) %>%
+  distinct()
+
+fao_data <- fao_data %>%
+  select(-c(element, element_code_fao))
+
+fao_item_code <- fao_data %>%
+  select(item_code, item_code_cpc, item) %>%
+  mutate(item_code_cpc = gsub("^\'", "", item_code_cpc)) %>%
+  distinct()
+
+fao_data <- fao_data %>%
+  select(-c(item, item_code_cpc))
+
+fao_data <- fao_data %>%
+  select(-c(reporter_country_code_m49, reporter_countries,
+            partner_country_code_m49, partner_countries)) %>%
+  mutate(
+    reporter_country_code = as.integer(reporter_country_code),
+    partner_country_code = as.integer(partner_country_code)
+  )
+
+fao_unit_code <- fao_data %>%
+  select(unit) %>%
+  distinct() %>%
+  mutate(unit_code = row_number())
+
+fao_data <- fao_data %>%
+  left_join(fao_unit_code) %>%
+  select(reporter_country_code:element_code, unit_code, y1986:y2020)
+
+# 4.2 convert wide to long ----
 
 fao_data <- fao_data %>%
   group_by(reporter_country_code) %>%
@@ -34,16 +82,51 @@ fao_data <- map_df(
     fao_data %>%
       filter(reporter_country_code == c) %>%
       unnest(data) %>%
-      pivot_longer(y1986:y2020, names_to = "year", values_to = "imports") %>%
+      pivot_longer(y1986:y2020, names_to = "year", values_to = "value") %>%
       mutate(year = as.integer(gsub("y", "", year))) %>%
-      drop_na(imports)
+      drop_na(value) %>%
+
+      mutate(
+        value = case_when(
+          unit_code == 1L ~ value,
+          unit_code == 2L ~ value * 1000,
+          unit_code == 3L ~ value,
+          unit_code == 4L ~ value * 1000,
+          unit_code == 5L ~ value
+        )
+      ) %>%
+
+      left_join(fao_element_code) %>%
+      select(-element_code) %>%
+      left_join(fao_unit_code) %>%
+      mutate(element = paste(element, unit)) %>%
+      select(-unit, -unit_code) %>%
+      pivot_wider(names_from = "element", values_from = "value") %>%
+      clean_names() %>%
+      rename(
+        import_value_usd = import_value_1000_us,
+        export_value_usd = export_value_1000_us
+      )
   }
 )
 
 fao_data <- fao_data %>%
   mutate(
-    item_code_cpc = gsub("^\'", "", item_code_cpc),
-    imports = 1000 * imports
+    import_quantity_head = case_when(
+      is.na(import_quantity_head) ~ import_quantity_1000_head,
+      !is.na(import_quantity_head) ~ import_quantity_head
+    ),
+    export_quantity_head = case_when(
+      is.na(export_quantity_head) ~ export_quantity_1000_head,
+      !is.na(export_quantity_head) ~ export_quantity_head
+    )
+  ) %>%
+  select(-export_quantity_1000_head, -import_quantity_1000_head) %>%
+  select(reporter_country_code, partner_country_code, item_code, year,
+         starts_with("export"), starts_with("import")) %>%
+  rename(
+    export_quantity_no_unit = export_quantity_no,
+    import_quantity_no_unit = import_quantity_no
   )
 
 try(dir.create("out/rds", recursive = T))

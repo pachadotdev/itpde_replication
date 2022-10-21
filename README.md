@@ -22,13 +22,15 @@ In the meanwhile I scraped some tables from the PDF.
 
 1986-2020
 
-## Sources
+## Trade data
+
+### Sources
 
 The Food and Agriculture Organization of the United Nations Statistics
 Division (FAOSTAT), which gathers data from UNSD, Eurostat, and other
 national authorities as needed.
 
-## Special cases
+### Special cases
 
 From the article:
 
@@ -36,3 +38,7 @@ From the article:
 > “rice (paddy)”. Instead, we use data from the UN Commodity Trade
 > Statistics Database (COMTRADE), HS sector 100,610 “Cereals; rice in
 > the husk (paddy or rough)”
+
+## Production data
+
+Also FAOSTAT. Use the data on the “Value of Agricultural Production”.
