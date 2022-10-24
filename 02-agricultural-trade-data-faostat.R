@@ -320,7 +320,7 @@ fao_data <- fao_data %>%
 
 # 8: Save ----
 
-try(dir.create("out/parquet/", recursive = T))
+try(dir.create("out/parquet/agriculture", recursive = T))
 
-write_parquet(fao_data, "out/parquet/fao_data.parquet")
-write_parquet(fcl_manufacturing, "out/parquet/fcl_manufacturing.parquet")
+write_parquet(fao_data, "out/parquet/agriculture/fao_data.parquet")
+write_parquet(fcl_manufacturing, "out/parquet/agriculture/fcl_manufacturing.parquet")
