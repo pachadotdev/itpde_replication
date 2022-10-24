@@ -66,11 +66,6 @@ fao_element_code <- fao_data %>%
 fao_data <- fao_data %>%
   select(-c(element, element_code_fao))
 
-fao_item_code <- fao_data %>%
-  select(item_code, item_code_cpc, item) %>%
-  mutate(item_code_cpc = gsub("^\'", "", item_code_cpc)) %>%
-  distinct()
-
 fao_data <- fao_data %>%
   select(-c(item, item_code_cpc))
 
@@ -328,5 +323,4 @@ fao_data <- fao_data %>%
 try(dir.create("out/parquet/", recursive = T))
 
 write_parquet(fao_data, "out/parquet/fao_data.parquet")
-write_parquet(fao_item_code, "out/parquet/fao_item_code.parquet")
 write_parquet(fcl_manufacturing, "out/parquet/fcl_manufacturing.parquet")
