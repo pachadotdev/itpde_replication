@@ -4,6 +4,7 @@ library(janitor)
 library(dplyr)
 library(tidyr)
 library(purrr)
+library(arrow)
 
 # 1: Download trade data ----
 
@@ -37,15 +38,7 @@ if (!file.exists(csv_fcl_id)) {
 # (inp/img/faostats_country_correspondence.png)
 # the file is inp/csv/faostat_country_correspondence.csv
 
-# 3: Download correspondence between FAO product codes and HS product codes ----
-
-# the file was downloaded from the browser and points to
-# blob:https://www.fao.org/57203009-07f0-4867-9eaf-81a56b990566
-# see image for https://www.fao.org/faostat/en/#data/QV
-# (inp/img/faostats_country_correspondence.png)
-# the file is inp/csv/faostat_country_correspondence.csv
-
-# 4: Download HS 92 to ISIC 3 correspondence table ----
+# 3: Download HS 92 to ISIC 3 correspondence table ----
 
 url_fcl_hs <- "http://wits.worldbank.org/data/public/concordance/Concordance_H3_to_I3.zip"
 
@@ -59,9 +52,9 @@ if (length(list.files("inp/csv/hs07_to_isic3")) == 0) {
   archive_extract(zip_fcl_hs, dir = "inp/csv/hs07_to_isic3")
 }
 
-# 5: Tidy data ----
+# 4: Tidy data ----
 
-## 5.1 tidy codes ----
+## 4.1 tidy codes ----
 
 fao_data <- read_csv("inp/csv/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
   clean_names()
@@ -98,7 +91,7 @@ fao_data <- fao_data %>%
   left_join(fao_unit_code) %>%
   select(reporter_country_code:element_code, unit_code, y1986:y2020)
 
-## 5.2 convert wide to long ----
+## 4.2 convert wide to long ----
 
 fao_data <- fao_data %>%
   group_by(reporter_country_code) %>%
@@ -158,7 +151,7 @@ fao_data <- fao_data %>%
     import_quantity_no_unit = import_quantity_no
   )
 
-## 5.3 convert country codes ----
+## 4.3 convert country codes ----
 
 fao_country_correspondence <- read_csv("inp/csv/faostat_country_correspondence.csv") %>%
   clean_names() %>%
@@ -177,7 +170,7 @@ fao_data <- fao_data %>%
   ungroup() %>%
   select(-c(reporter_country_code, partner_country_code))
 
-# 6: Identify manufacturing data in FAOSTAT ----
+# 5: Identify manufacturing data in FAOSTAT ----
 
 # Speciﬁcally, we classify all industries between 1500 and 1601 of ISIC rev. 3 as manufacturing indus-
 # tries. Using the FCL to HS and HS to ISIC rev. 3 correspondence tables, we identify the FCL items that are part of the manufacturing
@@ -222,8 +215,6 @@ fcl_manufacturing <- tibble(
                 1065, 1066, 1069, 1073, 1074, 1075, 1080, 1081, 1089, 1097, 1098, 1102, 1103, 1104, 1105, 1108, 1109, 1111, 1112, 1127, 1128, 1129, 1130, 1141, 1151, 1158,
                 1160, 1163, 1164, 1166, 1167, 1168, 1172, 1173, 1174, 1175, 1186, 1187, 1221, 1222, 1223, 1225, 1241, 1242, 1243, 1273, 1274, 1275, 1276, 1277, 1296)
 )
-
-saveRDS(fcl_manufacturing, "out/rds/fcl_manufacturing.rds")
 
 # 6: Convert FCL to ITPD-E, filter and aggregate ----
 
@@ -308,6 +299,8 @@ fao_data <- fao_data %>%
 fao_data <- fao_data %>%
   arrange(year, exporter_iso3, importer_iso3, industry_id)
 
+# TODO: this comparison should match
+
 # fao_data %>%
 #   filter(exporter_iso3 == "BRA", importer_iso3 == "CHL", year == 2010L,
 #          industry_id %in% unique(fcl_to_itpde$industry_id)) %>%
@@ -330,9 +323,10 @@ fao_data <- fao_data %>%
 #   collect() %>%
 #   print(n = 20)
 
-# 7: save ----
+# 8: Save ----
 
-try(dir.create("out/rds", recursive = T))
+try(dir.create("out/parquet/", recursive = T))
 
-saveRDS(fao_data, "out/rds/fao_data.rds")
-saveRDS(fao_item_code, "out/rds/fao_item_code.rds")
+write_parquet(fao_data, "out/parquet/fao_data.parquet")
+write_parquet(fao_item_code, "out/parquet/fao_item_code.parquet")
+write_parquet(fcl_manufacturing, "out/parquet/fcl_manufacturing.parquet")
