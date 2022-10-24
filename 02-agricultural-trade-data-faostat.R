@@ -38,20 +38,6 @@ if (!file.exists(csv_fcl_id)) {
 # (inp/img/faostats_country_correspondence.png)
 # the file is inp/csv/faostat_country_correspondence.csv
 
-# 3: Download HS 92 to ISIC 3 correspondence table ----
-
-url_fcl_hs <- "http://wits.worldbank.org/data/public/concordance/Concordance_H3_to_I3.zip"
-
-zip_fcl_hs <- "inp/zip/hs07_to_isic3.zip"
-
-if (!file.exists(zip_fcl_hs)) {
-  download.file(url_fcl_hs, zip_fcl_hs)
-}
-
-if (length(list.files("inp/csv/hs07_to_isic3")) == 0) {
-  archive_extract(zip_fcl_hs, dir = "inp/csv/hs07_to_isic3")
-}
-
 # 4: Tidy data ----
 
 ## 4.1 tidy codes ----
