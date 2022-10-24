@@ -42,20 +42,20 @@ if (!file.exists(csv_fcl_id)) {
 
 ## 4.1 tidy codes ----
 
-fao_data <- read_csv("inp/csv/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
+fao_trade <- read_csv("inp/csv/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
   clean_names()
 
-fao_element_code <- fao_data %>%
+fao_element_code <- fao_trade %>%
   select(element_code, element) %>%
   distinct()
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   select(-c(element, element_code_fao))
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   select(-c(item, item_code_cpc))
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   select(-c(reporter_country_code_m49, reporter_countries,
             partner_country_code_m49, partner_countries)) %>%
   mutate(
@@ -63,26 +63,26 @@ fao_data <- fao_data %>%
     partner_country_code = as.integer(partner_country_code)
   )
 
-fao_unit_code <- fao_data %>%
+fao_unit_code <- fao_trade %>%
   select(unit) %>%
   distinct() %>%
   mutate(unit_code = row_number())
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   left_join(fao_unit_code) %>%
   select(reporter_country_code:element_code, unit_code, y1986:y2020)
 
 ## 4.2 convert wide to long ----
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   group_by(reporter_country_code) %>%
   nest()
 
-fao_data <- map_df(
-  fao_data %>% pull(reporter_country_code),
+fao_trade <- map_df(
+  fao_trade %>% pull(reporter_country_code),
   function(c) {
     message(c)
-    fao_data %>%
+    fao_trade %>%
       filter(reporter_country_code == c) %>%
       unnest(data) %>%
       pivot_longer(y1986:y2020, names_to = "year", values_to = "value") %>%
@@ -113,7 +113,7 @@ fao_data <- map_df(
   }
 )
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   mutate(
     import_quantity_head = case_when(
       is.na(import_quantity_head) ~ import_quantity_1000_head,
@@ -138,7 +138,7 @@ fao_country_correspondence <- read_csv("inp/csv/faostat_country_correspondence.c
   clean_names() %>%
   select(country_code, iso3_code)
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   left_join(
     fao_country_correspondence %>% rename(reporter_iso3 = iso3_code),
     by = c("reporter_country_code" = "country_code")
@@ -204,7 +204,7 @@ fcl_to_itpde <- read_csv("inp/csv/fcl_to_itpde.csv") %>%
   select(industry_id = itpd_id, item_code = fcl_item_code) %>%
   mutate_if(is.double, as.integer)
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   inner_join(fcl_to_itpde, by = "item_code") %>%
   group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
   summarise(
@@ -212,16 +212,16 @@ fao_data <- fao_data %>%
     export_value_usd = sum(export_value_usd, na.rm = T)
   )
 
-fao_data_2 <- fao_data %>%
+fao_trade_2 <- fao_trade %>%
   ungroup() %>%
   select(-export_value_usd)
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   ungroup() %>%
   select(-import_value_usd)
 
-fao_data <- fao_data %>%
-  full_join(fao_data_2, by = c("year", "industry_id",
+fao_trade <- fao_trade %>%
+  full_join(fao_trade_2, by = c("year", "industry_id",
                                "reporter_iso3" = "partner_iso3",
                                "partner_iso3" = "reporter_iso3")) %>%
   mutate_if(is.double, function(x) ifelse(is.na(x), 0, x)) %>%
@@ -255,34 +255,34 @@ fao_data <- fao_data %>%
 # original: 5,988,747 rows with added zeroes
 # here: 10,845,545
 
-fao_data_0 <- fao_data %>%
+fao_trade_0 <- fao_trade %>%
   group_by(year, exporter_iso3, importer_iso3) %>%
   summarise(trade = sum(trade, na.rm = T)) %>%
   filter(trade > 0) %>%
   ungroup() %>%
   select(-trade)
 
-fao_data_0 <- expand_grid(
-  fao_data_0,
+fao_trade_0 <- expand_grid(
+  fao_trade_0,
   industry_id = unique(fcl_to_itpde$industry_id)
 ) %>%
-  anti_join(fao_data) %>%
+  anti_join(fao_trade) %>%
   mutate(
     trade = 0,
     flag_mirror = 0L,
     flag_zero = "u"
   )
 
-fao_data <- fao_data %>%
-  bind_rows(fao_data_0) %>%
+fao_trade <- fao_trade %>%
+  bind_rows(fao_trade_0) %>%
   select(-export_value_usd, -import_value_usd)
 
-fao_data <- fao_data %>%
+fao_trade <- fao_trade %>%
   arrange(year, exporter_iso3, importer_iso3, industry_id)
 
 # TODO: this comparison should match
 
-# fao_data %>%
+# fao_trade %>%
 #   filter(exporter_iso3 == "BRA", importer_iso3 == "CHL", year == 2010L,
 #          industry_id %in% unique(fcl_to_itpde$industry_id)) %>%
 #   mutate(trade = trade / 1000000) %>%
@@ -308,5 +308,5 @@ fao_data <- fao_data %>%
 
 try(dir.create("out/parquet/agriculture", recursive = T))
 
-write_parquet(fao_data, "out/parquet/agriculture/fao_data.parquet")
+write_parquet(fao_trade, "out/parquet/agriculture/fao_trade.parquet")
 write_parquet(fcl_manufacturing, "out/parquet/agriculture/fcl_manufacturing.parquet")
