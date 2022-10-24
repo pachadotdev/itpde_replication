@@ -47,15 +47,16 @@ if (!file.exists(csv_fcl_id)) {
 
 # 4: Download HS 92 to ISIC 3 correspondence table ----
 
-url_fcl_hs <- "http://wits.worldbank.org/data/public/concordance/Concordance_H0_to_I3.zip"
-zip_fcl_hs <- "inp/zip/hs92_to_isic3.zip"
+url_fcl_hs <- "http://wits.worldbank.org/data/public/concordance/Concordance_H3_to_I3.zip"
+
+zip_fcl_hs <- "inp/zip/hs07_to_isic3.zip"
 
 if (!file.exists(zip_fcl_hs)) {
   download.file(url_fcl_hs, zip_fcl_hs)
 }
 
-if (length(list.files("inp/csv/hs92_to_isic3")) == 0) {
-  archive_extract(zip_fcl_hs, dir = "inp/csv/hs92_to_isic3")
+if (length(list.files("inp/csv/hs07_to_isic3")) == 0) {
+  archive_extract(zip_fcl_hs, dir = "inp/csv/hs07_to_isic3")
 }
 
 # 5: Tidy data ----
@@ -176,6 +177,38 @@ fao_data <- fao_data %>%
   ungroup() %>%
   select(-c(reporter_country_code, partner_country_code))
 
+# 6: Identify manufacturing data in FAOSTAT ----
+
+# Speciﬁcally, we classify all industries between 1500 and 1601 of ISIC rev. 3 as manufacturing indus-
+# tries. Using the FCL to HS and HS to ISIC rev. 3 correspondence tables, we identify the FCL items that are part of the manufacturing
+# data. 12 Note that these FCL items typically do not have matching production data in the FAO’s database. Some FCL items could not
+# be uniquely matched to broad sectors. In these cases, we allocated FCL items according the number of constituent HS lines. 13 We
+# also dropped industries we could not match to any ISIC or HS code 14 and industries with FCL item codes above 1296, which are
+# aggregates and industries such as fertilizers, pesticides, and machinery, belonging to one of the other broad sectors. Table 4 includes
+# the correspondence between ITPD-E agricultural industries and FCL items.
+
+# here the 50 is totally arbitrary, it's used to create NAs and then filter
+# which is better than ommiting HS codes when moving to long format
+
+faostat_product_correspondence <- read_csv("inp/csv/faostat_product_correspondence.csv") %>%
+  clean_names() %>%
+  select(item_code, hs07 = hs07_code) %>%
+  separate(hs07, paste0("hs07_", 1:50)) %>%
+  pivot_longer(hs07_1:hs07_50) %>%
+  drop_na() %>%
+  rename(hs07 = value) %>%
+  select(-name)
+
+hs07_to_isic <- read_csv("inp/csv/hs07_to_isic3/JobID-48_Concordance_H3_to_I3.CSV") %>%
+  clean_names() %>%
+  select(hs07 = hs_2007_product_code, isic3 = isic_revision_3_product_code)
+
+faostat_product_correspondence <- faostat_product_correspondence %>%
+  left_join(hs07_to_isic)
+
+fao_item_code %>%
+  left_join(faostat_product_correspondence, by = c("item_code" = ))
+
 # 6: Convert FCL to ITPD-E, filter and aggregate ----
 
 fcl_to_itpde <- read_csv("inp/csv/fcl_to_itpde.csv") %>%
@@ -183,29 +216,29 @@ fcl_to_itpde <- read_csv("inp/csv/fcl_to_itpde.csv") %>%
   select(industry_id = itpd_id, item_code = fcl_item_code) %>%
   mutate_if(is.double, as.integer)
 
-fao_data <- fao_data %>%
-  inner_join(fcl_to_itpde, by = "item_code") %>%
-  group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
-  summarise(import_value_usd = sum(import_value_usd, na.rm = T))
-
-fao_data %>%
-  filter(reporter_iso3 == "CHL", partner_iso3 == "BRA", year == 2010L,
-         industry_id %in% unique(fcl_to_itpde$industry_id)) %>%
-  mutate(import_value_usd = import_value_usd / 1000000) %>%
-  arrange(industry_id)
-
-library(usitcgravity)
-
-con <- usitcgravity_connect()
-
-industries <- unique(fcl_to_itpde$industry_id)
-
-tbl(con, "trade") %>%
-  filter(importer_iso3 == "CHL", exporter_iso3 == "BRA", year == 2010L,
-         industry_id %in% industries) %>%
-  arrange(industry_id) %>%
-  select(exporter_iso3, importer_iso3, industry_id, trade) %>%
-  collect()
+# fao_data <- fao_data %>%
+#   inner_join(fcl_to_itpde, by = "item_code") %>%
+#   group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
+#   summarise(import_value_usd = sum(import_value_usd, na.rm = T))
+#
+# fao_data %>%
+#   filter(reporter_iso3 == "CHL", partner_iso3 == "BRA", year == 2010L,
+#          industry_id %in% unique(fcl_to_itpde$industry_id)) %>%
+#   mutate(import_value_usd = import_value_usd / 1000000) %>%
+#   arrange(industry_id)
+#
+# library(usitcgravity)
+#
+# con <- usitcgravity_connect()
+#
+# industries <- unique(fcl_to_itpde$industry_id)
+#
+# tbl(con, "trade") %>%
+#   filter(importer_iso3 == "CHL", exporter_iso3 == "BRA", year == 2010L,
+#          industry_id %in% industries) %>%
+#   arrange(industry_id) %>%
+#   select(exporter_iso3, importer_iso3, industry_id, trade) %>%
+#   collect()
 
 # I need to check these values
 
