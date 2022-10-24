@@ -201,13 +201,29 @@ faostat_product_correspondence <- read_csv("inp/csv/faostat_product_corresponden
 
 hs07_to_isic <- read_csv("inp/csv/hs07_to_isic3/JobID-48_Concordance_H3_to_I3.CSV") %>%
   clean_names() %>%
-  select(hs07 = hs_2007_product_code, isic3 = isic_revision_3_product_code)
+  select(hs07 = hs_2007_product_code, isic3 = isic_revision_3_product_code,
+         isic_revision_3_product_description)
 
 faostat_product_correspondence <- faostat_product_correspondence %>%
   left_join(hs07_to_isic)
 
-fao_item_code %>%
-  left_join(faostat_product_correspondence, by = c("item_code" = ))
+# footnote 12 in the article
+
+fcl_manufacturing <- tibble(
+  item_code = c(16, 18, 19, 20, 21, 22, 23, 24, 26, 28, 29, 31, 32, 34, 36, 37, 38, 39, 41, 45, 46, 48, 49, 50, 51, 57, 58, 60, 61, 64, 66, 72, 76, 80, 82, 84,
+                86, 90, 95, 98, 104, 109, 110, 111, 113, 114, 115, 117, 118, 119, 121, 126, 127, 129, 150, 154, 155, 158, 159, 160, 162, 163, 164, 165, 166, 167, 168, 172, 173,
+                175, 212, 235, 237, 238, 239, 240, 241, 244, 245, 246, 247, 252, 253, 257, 258, 259, 261, 262, 264, 266, 268, 269, 271, 272, 273, 274, 276, 278, 281, 282, 290,
+                291, 293, 294, 295, 297, 298, 306, 307, 313, 314, 331, 332, 334, 335, 337, 338, 340, 341, 343, 390, 391, 392, 447, 448, 450, 451, 466, 469, 471, 472, 473, 474,
+                475, 476, 491, 492, 496, 498, 499, 509, 510, 513, 514, 517, 518, 519, 538, 539, 562, 563, 564, 565, 575, 576, 580, 583, 584, 622, 623, 624, 625, 626, 631, 632,
+                633, 634, 657, 658, 659, 660, 662, 664, 665, 666, 672, 737, 753, 768, 770, 773, 774, 828, 829, 831, 840, 841, 842, 843, 845, 849, 850, 851, 852, 853, 854, 855,
+                867, 869, 870, 871, 872, 873, 874, 875, 877, 878, 882, 883, 885, 886, 887, 888, 889, 890, 891, 892, 893, 894, 895, 896, 897, 898, 899, 900, 901, 903, 904, 905,
+                907, 908, 909, 910, 916, 917, 919, 920, 921, 922, 927, 928, 929, 930, 947, 949, 951, 952, 953, 954, 955, 957, 958, 959, 977, 979, 982, 983, 984, 985, 988, 994,
+                995, 996, 997, 998, 999, 1008, 1010, 1017, 1019, 1020, 1021, 1022, 1023, 1035, 1037, 1038, 1039, 1040, 1041, 1042, 1043, 1058, 1059, 1060, 1061, 1063, 1064,
+                1065, 1066, 1069, 1073, 1074, 1075, 1080, 1081, 1089, 1097, 1098, 1102, 1103, 1104, 1105, 1108, 1109, 1111, 1112, 1127, 1128, 1129, 1130, 1141, 1151, 1158,
+                1160, 1163, 1164, 1166, 1167, 1168, 1172, 1173, 1174, 1175, 1186, 1187, 1221, 1222, 1223, 1225, 1241, 1242, 1243, 1273, 1274, 1275, 1276, 1277, 1296)
+)
+
+saveRDS(fcl_manufacturing, "out/rds/fcl_manufacturing.rds")
 
 # 6: Convert FCL to ITPD-E, filter and aggregate ----
 
@@ -216,16 +232,89 @@ fcl_to_itpde <- read_csv("inp/csv/fcl_to_itpde.csv") %>%
   select(industry_id = itpd_id, item_code = fcl_item_code) %>%
   mutate_if(is.double, as.integer)
 
-# fao_data <- fao_data %>%
-#   inner_join(fcl_to_itpde, by = "item_code") %>%
-#   group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
-#   summarise(import_value_usd = sum(import_value_usd, na.rm = T))
-#
+fao_data <- fao_data %>%
+  inner_join(fcl_to_itpde, by = "item_code") %>%
+  group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
+  summarise(
+    import_value_usd = sum(import_value_usd, na.rm = T),
+    export_value_usd = sum(export_value_usd, na.rm = T)
+  )
+
+fao_data_2 <- fao_data %>%
+  ungroup() %>%
+  select(-export_value_usd)
+
+fao_data <- fao_data %>%
+  ungroup() %>%
+  select(-import_value_usd)
+
+fao_data <- fao_data %>%
+  full_join(fao_data_2, by = c("year", "industry_id",
+                               "reporter_iso3" = "partner_iso3",
+                               "partner_iso3" = "reporter_iso3")) %>%
+  mutate_if(is.double, function(x) ifelse(is.na(x), 0, x)) %>%
+  mutate(
+    trade = case_when(
+      import_value_usd == 0 ~ export_value_usd,
+      TRUE ~ import_value_usd
+    ),
+    flag_mirror = case_when(
+      trade == export_value_usd ~ 0L,
+      TRUE ~ 1L
+    ),
+    flag_zero = case_when(
+      trade > 0 ~ "p",
+      trade == 0 ~ "r" # I still need to add "flag = u" later
+    )
+  ) %>%
+  rename(
+    exporter_iso3 = reporter_iso3,
+    importer_iso3 = partner_iso3
+  )
+
+# 7: Add zeroes ----
+
+# here I add missing industries for year-exporter-importer combinations with
+# total trade > 0
+
+# TODO: the original data has less added zeroes (i.e. industry_id 9 for BRA-CHL 2010 is not in the
+# original data)
+
+# original: 5,988,747 rows with added zeroes
+# here: 10,845,545
+
+fao_data_0 <- fao_data %>%
+  group_by(year, exporter_iso3, importer_iso3) %>%
+  summarise(trade = sum(trade, na.rm = T)) %>%
+  filter(trade > 0) %>%
+  ungroup() %>%
+  select(-trade)
+
+fao_data_0 <- expand_grid(
+  fao_data_0,
+  industry_id = unique(fcl_to_itpde$industry_id)
+) %>%
+  anti_join(fao_data) %>%
+  mutate(
+    trade = 0,
+    flag_mirror = 0L,
+    flag_zero = "u"
+  )
+
+fao_data <- fao_data %>%
+  bind_rows(fao_data_0) %>%
+  select(-export_value_usd, -import_value_usd)
+
+fao_data <- fao_data %>%
+  arrange(year, exporter_iso3, importer_iso3, industry_id)
+
 # fao_data %>%
-#   filter(reporter_iso3 == "CHL", partner_iso3 == "BRA", year == 2010L,
+#   filter(exporter_iso3 == "BRA", importer_iso3 == "CHL", year == 2010L,
 #          industry_id %in% unique(fcl_to_itpde$industry_id)) %>%
-#   mutate(import_value_usd = import_value_usd / 1000000) %>%
-#   arrange(industry_id)
+#   mutate(trade = trade / 1000000) %>%
+#   arrange(industry_id) %>%
+#   print(n = 20) %>%
+#   knitr::kable()
 #
 # library(usitcgravity)
 #
@@ -237,12 +326,11 @@ fcl_to_itpde <- read_csv("inp/csv/fcl_to_itpde.csv") %>%
 #   filter(importer_iso3 == "CHL", exporter_iso3 == "BRA", year == 2010L,
 #          industry_id %in% industries) %>%
 #   arrange(industry_id) %>%
-#   select(exporter_iso3, importer_iso3, industry_id, trade) %>%
-#   collect()
+#   select(exporter_iso3, importer_iso3, industry_id, trade, flag_mirror, flag_zero) %>%
+#   collect() %>%
+#   print(n = 20)
 
-# I need to check these values
-
-# X: save ----
+# 7: save ----
 
 try(dir.create("out/rds", recursive = T))
 
