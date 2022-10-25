@@ -6,7 +6,7 @@ library(tidyr)
 library(purrr)
 library(arrow)
 
-# 1: Download trade data ----
+# Download trade data ----
 
 url_trade_data <- "https://fenixservices.fao.org/faostat/static/bulkdownloads/Trade_DetailedTradeMatrix_E_All_Data.zip"
 zip_trade_data <- "inp/zip/faostat_trade_matrix.zip"
@@ -21,7 +21,22 @@ if (length(list.files("inp/csv/faostat_trade_matrix")) == 0) {
   archive_extract(zip_trade_data, dir = "inp/csv/faostat_trade_matrix")
 }
 
-# 2: Download FCL (FAOSTAT) to ITPD-E codes ----
+# Download production data ----
+
+url_production_data <- "https://fenixservices.fao.org/faostat/static/bulkdownloads/Value_of_Production_E_All_Data.zip"
+zip_production_data <- "inp/zip/faostat_production_matrix.zip"
+
+try(dir.create("inp/zip", recursive = T))
+
+if (!file.exists(zip_production_data)) {
+  download.file(url_production_data, zip_production_data)
+}
+
+if (length(list.files("inp/csv/faostat_production_matrix")) == 0) {
+  archive_extract(zip_production_data, dir = "inp/csv/faostat_production_matrix")
+}
+
+# Download FCL (FAOSTAT) to ITPD-E codes ----
 
 url_fcl_id <- "https://www.usitc.gov/data/gravity/itpde_concordances/itpd_e_r02_ag_fcl.csv"
 csv_fcl_id <- "inp/csv/fcl_to_itpde.csv"
@@ -30,7 +45,7 @@ if (!file.exists(csv_fcl_id)) {
   download.file(url_fcl_id, csv_fcl_id)
 }
 
-# 2: Download correspondence between FAO country codes and ISO-3 country codes ----
+# Download correspondence between FAO country codes and ISO-3 country codes ----
 
 # the file was downloaded from the browser and points to
 # blob:https://www.fao.org/57203009-07f0-4867-9eaf-81a56b990566
@@ -38,9 +53,9 @@ if (!file.exists(csv_fcl_id)) {
 # (inp/img/faostats_country_correspondence.png)
 # the file is inp/csv/faostat_country_correspondence.csv
 
-# 4: Tidy data ----
+# Tidy trade data ----
 
-## 4.1 tidy codes ----
+## Tidy codes ----
 
 fao_trade <- read_csv("inp/csv/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
   clean_names()
@@ -72,7 +87,7 @@ fao_trade <- fao_trade %>%
   left_join(fao_unit_code) %>%
   select(reporter_country_code:element_code, unit_code, y1986:y2020)
 
-## 4.2 convert wide to long ----
+## Convert wide to long and tidy units ----
 
 fao_trade <- fao_trade %>%
   group_by(reporter_country_code) %>%
@@ -132,7 +147,7 @@ fao_trade <- fao_trade %>%
     import_quantity_no_unit = import_quantity_no
   )
 
-## 4.3 convert country codes ----
+## Convert country codes ----
 
 fao_country_correspondence <- read_csv("inp/csv/faostat_country_correspondence.csv") %>%
   clean_names() %>%
@@ -151,7 +166,7 @@ fao_trade <- fao_trade %>%
   ungroup() %>%
   select(-c(reporter_country_code, partner_country_code))
 
-# 5: Identify manufacturing data in FAOSTAT ----
+## Identify manufacturing data in FAOSTAT ----
 
 # Speciﬁcally, we classify all industries between 1500 and 1601 of ISIC rev. 3 as manufacturing indus-
 # tries. Using the FCL to HS and HS to ISIC rev. 3 correspondence tables, we identify the FCL items that are part of the manufacturing
@@ -160,26 +175,6 @@ fao_trade <- fao_trade %>%
 # also dropped industries we could not match to any ISIC or HS code 14 and industries with FCL item codes above 1296, which are
 # aggregates and industries such as fertilizers, pesticides, and machinery, belonging to one of the other broad sectors. Table 4 includes
 # the correspondence between ITPD-E agricultural industries and FCL items.
-
-# here the 50 is totally arbitrary, it's used to create NAs and then filter
-# which is better than ommiting HS codes when moving to long format
-
-faostat_product_correspondence <- read_csv("inp/csv/faostat_product_correspondence.csv") %>%
-  clean_names() %>%
-  select(item_code, hs07 = hs07_code) %>%
-  separate(hs07, paste0("hs07_", 1:50)) %>%
-  pivot_longer(hs07_1:hs07_50) %>%
-  drop_na() %>%
-  rename(hs07 = value) %>%
-  select(-name)
-
-hs07_to_isic <- read_csv("inp/csv/hs07_to_isic3/JobID-48_Concordance_H3_to_I3.CSV") %>%
-  clean_names() %>%
-  select(hs07 = hs_2007_product_code, isic3 = isic_revision_3_product_code,
-         isic_revision_3_product_description)
-
-faostat_product_correspondence <- faostat_product_correspondence %>%
-  left_join(hs07_to_isic)
 
 # footnote 12 in the article
 
@@ -197,7 +192,7 @@ fcl_manufacturing <- tibble(
                 1160, 1163, 1164, 1166, 1167, 1168, 1172, 1173, 1174, 1175, 1186, 1187, 1221, 1222, 1223, 1225, 1241, 1242, 1243, 1273, 1274, 1275, 1276, 1277, 1296)
 )
 
-# 6: Convert FCL to ITPD-E, filter and aggregate ----
+## Convert FCL to ITPD-E, filter and aggregate ----
 
 fcl_to_itpde <- read_csv("inp/csv/fcl_to_itpde.csv") %>%
   clean_names() %>%
@@ -211,6 +206,8 @@ fao_trade <- fao_trade %>%
     import_value_usd = sum(import_value_usd, na.rm = T),
     export_value_usd = sum(export_value_usd, na.rm = T)
   )
+
+## Add mirrored flows and flags ----
 
 fao_trade_2 <- fao_trade %>%
   ungroup() %>%
@@ -244,7 +241,7 @@ fao_trade <- fao_trade %>%
     importer_iso3 = partner_iso3
   )
 
-# 7: Add zeroes ----
+## Add zeroes ----
 
 # here I add missing industries for year-exporter-importer combinations with
 # total trade > 0
@@ -304,7 +301,107 @@ fao_trade <- fao_trade %>%
 #   collect() %>%
 #   print(n = 20)
 
-# 8: Save ----
+# Tidy production data ----
+
+## Subset ----
+
+fao_production <- read_csv("inp/csv/faostat_production_matrix/Value_of_Production_E_All_Data_NOFLAG.csv") %>%
+  clean_names()
+
+fao_production <- fao_production %>%
+  select(area_code, item_code, unit, y1986:y2020)
+
+## Convert wide to long and country codes ----
+
+fao_production <- fao_production %>%
+  group_by(area_code) %>%
+  nest()
+
+fao_production <- map_df(
+  fao_production %>% pull(area_code),
+  function(c) {
+    message(c)
+    fao_production %>%
+      filter(area_code == c) %>%
+      unnest(data) %>%
+      pivot_longer(y1986:y2020, names_to = "year", values_to = "value") %>%
+      mutate(year = as.integer(gsub("y", "", year))) %>%
+      drop_na(value) %>%
+
+      group_by(year, area_code, item_code, unit) %>%
+      summarise(value = sum(value, na.rm = T)) %>%
+      ungroup() %>%
+
+      pivot_wider(names_from = "unit", values_from = "value") %>%
+      clean_names() %>%
+
+      left_join(
+        fao_country_correspondence %>%
+          select(area_code = country_code, producer_iso3 = iso3_code)
+      ) %>%
+      select(year, producer_iso3, everything()) %>%
+      select(-area_code)
+  }
+)
+
+## Tidy units ----
+
+fao_production <- fao_production %>%
+  mutate(
+    production_int_usd = 1000 * x1000_int,
+    production_slc = 1000 * x1000_slc,
+    production_usd = 1000 * x1000_us
+  ) %>%
+  select(-starts_with("x"))
+
+## Convert FCL to ITPD-E, filter and aggregate ----
+
+# Construct domestic trade. Domestic trade is calculated as the difference between the
+# (gross) value of total production and total exports. Total exports are constructed as
+# the sum of bilateral trade for each exporting country. If we obtain a negative domestic
+# trade value, we do not include this observation in the ITPD-E-R02.
+
+fao_production <- fao_production %>%
+  inner_join(fcl_to_itpde, by = "item_code") %>%
+  select(-item_code) %>%
+  group_by(year, producer_iso3, industry_id) %>%
+  summarise_if(is.double, sum, na.rm = T) %>%
+  ungroup()
+
+fao_production <- fao_production %>%
+  rename(exporter_iso3 = producer_iso3) %>%
+  mutate(importer_iso3 = exporter_iso3) %>%
+  select(year, exporter_iso3, importer_iso3, industry_id, production_int_usd) %>%
+  full_join(
+    fao_trade %>%
+      group_by(year, exporter_iso3, industry_id) %>%
+      summarise(total_exports = sum(trade, na.rm = T))
+  ) %>%
+  mutate(trade = production_int_usd - total_exports) %>%
+  filter(trade >= 0) %>%
+  select(year, exporter_iso3, importer_iso3, industry_id, trade)
+
+## Add flags ----
+
+fao_production <- fao_production %>%
+  mutate(
+    flag_mirror = 0L,
+    flag_zero = case_when(
+      trade > 0 ~ "p",
+      trade == 0 ~ "r"
+    )
+  )
+
+# Combine trade and production tables ----
+
+# TODO: production numbers are not similar to the original DB
+
+fao_trade <- fao_trade %>%
+  bind_rows(fao_production)
+
+rm(fao_production)
+
+# Save ----
 
 try(dir.create("out/parquet/agriculture", recursive = T))
 
