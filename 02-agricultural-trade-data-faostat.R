@@ -11,44 +11,37 @@ library(arrow)
 # Download trade data ----
 
 url_trade_data <- "https://fenixservices.fao.org/faostat/static/bulkdownloads/Trade_DetailedTradeMatrix_E_All_Data.zip"
-zip_trade_data <- "inp/zip/faostat_trade_matrix.zip"
+zip_trade_data <- "inp/faostat_trade_matrix.zip"
 
-try(dir.create("inp/zip", recursive = T))
+try(dir.create("inp/", recursive = T))
 
 if (!file.exists(zip_trade_data)) {
   download.file(url_trade_data, zip_trade_data)
 }
 
-if (length(list.files("inp/csv/faostat_trade_matrix")) == 0) {
-  archive_extract(zip_trade_data, dir = "inp/csv/faostat_trade_matrix")
-}
-
-# Download rice data (UN COMTRADE) ----
-
-dir_comtrade_data <- "sitc-rev2/"
-if (!dir.exists(dir_comtrade_data)) {
-  data_downloading(arrow = T, token = 1, dataset = 7)
+if (length(list.files("inp/faostat_trade_matrix")) == 0) {
+  archive_extract(zip_trade_data, dir = "inp/faostat_trade_matrix")
 }
 
 # Download production data ----
 
 url_production_data <- "https://fenixservices.fao.org/faostat/static/bulkdownloads/Value_of_Production_E_All_Data.zip"
-zip_production_data <- "inp/zip/faostat_production_matrix.zip"
+zip_production_data <- "inp/faostat_production_matrix.zip"
 
-try(dir.create("inp/zip", recursive = T))
+try(dir.create("inp/", recursive = T))
 
 if (!file.exists(zip_production_data)) {
   download.file(url_production_data, zip_production_data)
 }
 
-if (length(list.files("inp/csv/faostat_production_matrix")) == 0) {
-  archive_extract(zip_production_data, dir = "inp/csv/faostat_production_matrix")
+if (length(list.files("inp/faostat_production_matrix")) == 0) {
+  archive_extract(zip_production_data, dir = "inp/faostat_production_matrix")
 }
 
 # Download FCL (FAOSTAT) to ITPD-E codes ----
 
 url_fcl_id <- "https://www.usitc.gov/data/gravity/itpde_concordances/itpd_e_r02_ag_fcl.csv"
-csv_fcl_id <- "inp/csv/fcl_to_itpde.csv"
+csv_fcl_id <- "inp/fcl_to_itpde.csv"
 
 if (!file.exists(csv_fcl_id)) {
   download.file(url_fcl_id, csv_fcl_id)
@@ -59,15 +52,15 @@ if (!file.exists(csv_fcl_id)) {
 # the file was downloaded from the browser and points to
 # blob:https://www.fao.org/57203009-07f0-4867-9eaf-81a56b990566
 # see image for https://www.fao.org/faostat/en/#data/QV
-# (inp/img/faostats_country_correspondence.png)
-# the file is inp/csv/faostat_country_correspondence.csv
+# (inp/faostats_country_correspondence.png)
+# the file is inp/faostat_country_correspondence.csv
 
 # Import raw trade data ----
 
 con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
 if (!"agriculture_fao_trade_raw" %in% dbListTables(con)) {
-  fao_trade <- read_csv("inp/csv/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
+  fao_trade <- read_csv("inp/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
     clean_names()
 
   fao_element_code <- fao_trade %>%
@@ -112,7 +105,7 @@ dbDisconnect(con, shutdown = T)
 con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
 if (!"agriculture_fao_production_raw" %in% dbListTables(con)) {
-  fao_production <- read_csv("inp/csv/faostat_production_matrix/Value_of_Production_E_All_Data_NOFLAG.csv") %>%
+  fao_production <- read_csv("inp/faostat_production_matrix/Value_of_Production_E_All_Data_NOFLAG.csv") %>%
     clean_names()
 
   fao_production <- fao_production %>%
@@ -135,11 +128,15 @@ fao_reporters <- tbl(con, "agriculture_fao_trade_raw") %>%
   arrange() %>%
   pull()
 
-fao_country_correspondence <- read_csv("inp/csv/faostat_country_correspondence.csv") %>%
-  clean_names() %>%
-  select(country_code, iso3_code)
+if (!"agriculture_fao_country_correspondence" %in% dbListTables(con)) {
+  fao_country_correspondence <- read_csv("inp/faostat_country_correspondence.csv") %>%
+    clean_names() %>%
+    select(country_code, iso3_code)
 
-# HERE I USE THE SITC 2 CODE EQUIVALENT TO HS 100610 BECAUSE HS92 STARTS IN 1988
+  dbWriteTable(con, "agriculture_fao_country_correspondence", fao_country_correspondence)
+}
+
+# HERE I USE THE SITC 2 CODE EQUIVALENT 04211 TO HS 100610 BECAUSE HS92 STARTS IN 1988
 
 rice_paddy <- product_correlation %>%
   select(sitc2, hs92) %>%
@@ -147,10 +144,14 @@ rice_paddy <- product_correlation %>%
   select(sitc2) %>%
   pull()
 
-fcl_to_itpde <- read_csv("inp/csv/fcl_to_itpde.csv") %>%
-  clean_names() %>%
-  select(industry_id = itpd_id, item_code = fcl_item_code) %>%
-  mutate_if(is.double, as.integer)
+if (!"agriculture_fao_fcl_to_itpde" %in% dbListTables(con)) {
+  fcl_to_itpde <- read_csv("inp/fcl_to_itpde.csv") %>%
+    clean_names() %>%
+    select(industry_id = itpd_id, item_code = fcl_item_code) %>%
+    mutate_if(is.double, as.integer)
+
+  dbWriteTable(con, "agriculture_fao_fcl_to_itpde", fcl_to_itpde)
+}
 
 if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
   # Tidy trade data ----
@@ -159,7 +160,7 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
 
   fao_trade <- map(
     1986:2020,
-    function(y) {
+    function(y, add_comtrade = FALSE) {
       message(y)
       con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
@@ -232,104 +233,14 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
         ungroup() %>%
         select(-c(reporter_country_code, partner_country_code))
 
-      ## Add rice (paddy) ----
-
-      # FAOSTAT does not include international trade data for FCL item 27 “rice
-      # (paddy)”. Instead, we use data from the UN Commodity Trade Statistics Database
-      # (COMTRADE), HS sector 100,610 “Cereals; rice in the husk (paddy or rough)”.
-
-      d_imp <- open_dataset(
-        sources = paste0(dir_comtrade_data, "parquet/5/import"),
-        partitioning = schema(
-          year = int32(), reporter_iso = string())
-      ) %>%
-        filter(year == y) %>%
-        filter(!(partner_iso %in% c("all","wld"))) %>%
-        filter(commodity_code == rice_paddy) %>%
-        select(year, reporter_iso3 = reporter_iso,
-               partner_iso3 = partner_iso,
-               commodity_code,
-               trade_value_usd_imp = trade_value_usd,
-               trade_value_tonnes_imp = netweight_kg) %>%
-        collect() %>%
-        mutate(trade_value_tonnes_imp = trade_value_tonnes_imp * 1000) %>%
-        group_by(year, reporter_iso3, partner_iso3, commodity_code) %>%
-        summarise_if(is.double, sum, na.rm = T) %>%
-        ungroup()
-
-      d_exp <- open_dataset(
-        sources = paste0(dir_comtrade_data, "/parquet/5/export"),
-        partitioning = schema(
-          year = int32(), reporter_iso = string())
-      ) %>%
-        filter(year == y) %>%
-        filter(!(partner_iso %in% c("all","wld"))) %>%
-        filter(commodity_code == rice_paddy) %>%
-        select(year, reporter_iso3 = reporter_iso,
-               partner_iso3 = partner_iso,
-               commodity_code,
-               trade_value_usd_exp = trade_value_usd,
-               trade_value_tonnes_exp = netweight_kg) %>%
-        collect() %>%
-        mutate(trade_value_tonnes_exp = trade_value_tonnes_exp * 1000) %>%
-        group_by(year, reporter_iso3, partner_iso3, commodity_code) %>%
-        summarise_if(is.double, sum, na.rm = T) %>%
-        ungroup()
-
-      d_imp <- d_imp %>%
-        full_join(d_exp) %>%
-        select(-commodity_code) %>%
-        mutate(item_code = 27) %>%
-        rename(
-          export_value_usd = trade_value_usd_exp,
-          export_quantity_tonnes = trade_value_tonnes_exp,
-
-          import_value_usd = trade_value_usd_imp,
-          import_quantity_tonnes = trade_value_tonnes_imp
-        )
-
-      rm(d_exp)
-
-      d_imp <- d_imp %>%
-        mutate(
-          reporter_iso3 = toupper(case_when(
-            reporter_iso3 == "e-490" ~ "twn",
-            reporter_iso3 %in% c("drc", "zar") ~ "cod",
-            reporter_iso3 == "rom" ~ "rou",
-            TRUE ~ reporter_iso3
-          )),
-          partner_iso3 = toupper(case_when(
-            partner_iso3 == "e-490" ~ "twn",
-            partner_iso3 %in% c("drc", "zar") ~ "cod",
-            partner_iso3 == "rom" ~ "rou",
-            TRUE ~ partner_iso3
-          ))
-        )
-
-      d_imp <- d_imp %>%
-        inner_join(
-          d %>%
-            select(reporter_iso3, partner_iso3) %>%
-            distinct()
-        ) %>%
-        group_by(year, reporter_iso3, partner_iso3, item_code) %>%
-        summarise_if(is.numeric, sum, na.rm = T)
-
-      d <- d %>%
-        filter(item_code != 27) %>%
-        bind_rows(
-          d %>%
-            filter(item_code == 27) %>%
-            bind_rows(d_imp) %>%
-            group_by(year, reporter_iso3, partner_iso3, item_code) %>%
-            summarise_if(is.numeric, sum, na.rm = T) %>%
-            ungroup()
-        )
-
       ## Convert FCL to ITPD-E, filter and aggregate ----
 
       d <- d %>%
-        inner_join(fcl_to_itpde, by = "item_code") %>%
+        inner_join(
+          tbl(con, "agriculture_fao_fcl_to_itpde") %>%
+            collect(),
+          by = "item_code"
+        ) %>%
         group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
         summarise(
           import_value_usd = sum(import_value_usd, na.rm = T),
