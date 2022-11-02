@@ -4,9 +4,7 @@ library(janitor)
 library(dplyr)
 library(tidyr)
 library(purrr)
-library(uncomtrademisc)
 library(duckdb)
-library(arrow)
 
 # Download trade data ----
 
@@ -145,7 +143,7 @@ rice_paddy <- product_correlation %>%
   pull()
 
 if (!"agriculture_fao_fcl_to_itpde" %in% dbListTables(con)) {
-  fcl_to_itpde <- read_csv("inp/fcl_to_itpde.csv") %>%
+  fcl_to_itpde <- read_csv(csv_fcl_id) %>%
     clean_names() %>%
     select(industry_id = itpd_id, item_code = fcl_item_code) %>%
     mutate_if(is.double, as.integer)
