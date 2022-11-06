@@ -489,6 +489,20 @@ if (!"fishing_forestry_undata_production_tidy" %in% dbListTables(con)) {
   d_prod <- d_prod %>%
     arrange(country_iso3, year)
 
+  d_prod <- d_prod %>%
+    rename(exporter_iso3 = country_iso3) %>%
+    mutate(importer_iso3 = exporter_iso3) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, production_int_usd = production_usd) %>%
+    full_join(
+      tbl(con, "fishing_forestry_comtrade_trade_tidy") %>%
+        group_by(year, exporter_iso3, industry_id) %>%
+        summarise(total_exports = sum(trade, na.rm = T)) %>%
+        collect()
+    ) %>%
+    mutate(trade = production_int_usd - total_exports) %>%
+    filter(trade >= 0) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, trade)
+
   dbWriteTable(con, "fishing_forestry_undata_production_tidy", d_prod, overwrite = T)
 
   dbDisconnect(con, shutdown = T)
