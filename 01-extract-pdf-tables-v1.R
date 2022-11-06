@@ -7,7 +7,7 @@ library(tidyr)
 library(readr)
 
 tables <- extract_tables(
-  "inp/pdf/Borchert et al. - 2021 - The International Trade and Production Database fo.pdf",
+  "inp/Borchert et al. - 2021 - The International Trade and Production Database fo.pdf",
   output = "data.frame")
 
 tidy_table <- function(i) {
@@ -134,10 +134,10 @@ table8 <- tidy_table(16) %>%
 
 try(dir.create("out/csv/article", recursive = T))
 
-write_csv(table1, "out/csv/article/table1.csv")
-write_csv(table2, "out/csv/article/table2.csv")
-write_csv(table4, "out/csv/article/table4.csv")
-write_csv(table5, "out/csv/article/table5.csv")
-write_csv(table6, "out/csv/article/table6.csv")
-write_csv(table7, "out/csv/article/table7.csv")
-write_csv(table8, "out/csv/article/table8.csv")
+write_csv(table1, "out/article_table1.csv")
+write_csv(table2, "out/article_table2.csv")
+write_csv(table4, "out/article_table4.csv")
+write_csv(table5, "out/article_table5.csv")
+write_csv(table6, "out/article_table6.csv")
+write_csv(table7, "out/article_table7.csv")
+write_csv(table8, "out/article_table8.csv")
