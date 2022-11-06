@@ -72,3 +72,21 @@ From the article:
 ## Production data
 
 Also FAOSTAT. Use the data on the “Value of Agricultural Production”.
+
+For production obtained from UN DATA (i.e. Forestry and Fishing TODO ADD
+ANY OTHER CASE), the production is provided in each country’s currency.
+Therefore I downloaded the GDP in current prices in local currency
+(<https://unstats.un.org/unsd/amaapi/api/file/1>) and US dollar
+(<https://unstats.un.org/unsd/amaapi/api/file/2>). Then I obtained a
+constant to multiply each production value to express all in dollars.
+
+There are inconsistencies in UN datasets (i.e., “U.R. of Tanzania:
+Mainland” versus “Tanzania - Mainland” depending if we use UN Data or UN
+Stat)
+
+Also we need UN COMTRADE data here to match country numeric ID to ISO-3
+codes. Not all ID-Country pairs match (i.e., France, Italy, etc)
+
+## Download dates
+
+UN COMTRADE data 2022-10-31 FAO 2022-10-24
