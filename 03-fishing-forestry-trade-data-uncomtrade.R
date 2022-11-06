@@ -147,7 +147,6 @@ if (!"fishing_forestry_country_names" %in% dbListTables(con)) {
 }
 
 if (!"fishing_forestry_comtrade_trade_raw" %in% dbListTables(con)) {
-  # Tidy trade data ----
   con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
   a02 <- tbl(con, "fishing_forestry_isic3_to_hs92") %>%
@@ -164,7 +163,6 @@ if (!"fishing_forestry_comtrade_trade_raw" %in% dbListTables(con)) {
 
   dbDisconnect(con, shutdown = T)
 
-  # ADD MAP HERE FOR THE DIFFERENT YEARS
   map(
     1988:2020,
     function(y) {
@@ -319,7 +317,7 @@ if (!"fishing_forestry_comtrade_trade_raw" %in% dbListTables(con)) {
   )
 }
 
-# Import raw trade data ----
+# Import raw production data ----
 
 con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
@@ -423,9 +421,11 @@ if (!"fishing_forestry_country_iso3_codes" %in% dbListTables(con)) {
   dbDisconnect(con, shutdown = T)
 }
 
+# Tidy trade data ----
+
 con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
-if (!"fishing_forestry_undata_production_tidy" %in% dbListTables(con)) {
+if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
   d_prod <- tbl(con, "fishing_forestry_undata_production_raw") %>%
     filter(item == "Output, at basic prices") %>%
     select(year, country = country_or_area, sub_item, production_local_currency = value) %>%
@@ -494,16 +494,30 @@ if (!"fishing_forestry_undata_production_tidy" %in% dbListTables(con)) {
     mutate(importer_iso3 = exporter_iso3) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, production_int_usd = production_usd) %>%
     full_join(
-      tbl(con, "fishing_forestry_comtrade_trade_tidy") %>%
+      tbl(con, "fishing_forestry_comtrade_trade_raw") %>%
+        select(year, exporter_iso3 = partner_iso3, industry_id, import_value_usd) %>%
         group_by(year, exporter_iso3, industry_id) %>%
-        summarise(total_exports = sum(trade, na.rm = T)) %>%
+        summarise(total_exports = sum(import_value_usd, na.rm = T)) %>%
         collect()
     ) %>%
     mutate(trade = production_int_usd - total_exports) %>%
     filter(trade >= 0) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, trade)
 
-  dbWriteTable(con, "fishing_forestry_undata_production_tidy", d_prod, overwrite = T)
+  d_trade <- tbl(con, "fishing_forestry_comtrade_trade_raw") %>%
+    select(year, exporter_iso3 = partner_iso3, importer_iso3 = reporter_iso3,
+           industry_id, import_value_usd) %>%
+    group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
+    summarise(trade = sum(import_value_usd, na.rm = T)) %>%
+    collect()
+
+  d_trade <- d_trade %>%
+    arrange(exporter_iso3, year)
+
+  d_trade <- d_trade %>%
+    bind_rows(d_prod)
+
+  dbWriteTable(con, "fishing_forestry_comtrade_trade_tidy", d_trade, overwrite = T)
 
   dbDisconnect(con, shutdown = T)
 }
