@@ -218,6 +218,9 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
 
       ## Convert country codes ----
 
+      fao_country_correspondence <- tbl(con, "agriculture_fao_country_correspondence") %>%
+        collect()
+
       d <- d %>%
         left_join(
           fao_country_correspondence %>% rename(reporter_iso3 = iso3_code),
@@ -266,7 +269,7 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
             TRUE ~ import_value_usd
           ),
           flag_mirror = case_when(
-            trade == export_value_usd ~ 0L,
+            trade == import_value_usd ~ 0L,
             TRUE ~ 1L
           ),
           flag_zero = case_when(
@@ -308,7 +311,7 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
     }
   )
 
-  # Tidy production data ----
+  # Tidy production data (goes to same table as trade) ----
 
   message("==== PRODUCTION ====")
 
@@ -357,6 +360,9 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
       # (gross) value of total production and total exports. Total exports are constructed as
       # the sum of bilateral trade for each exporting country. If we obtain a negative domestic
       # trade value, we do not include this observation in the ITPD-E-R02.
+
+      fcl_to_itpde <- tbl(con, "agriculture_fao_fcl_to_itpde") %>%
+        collect()
 
       d <- d %>%
         inner_join(fcl_to_itpde, by = "item_code") %>%
