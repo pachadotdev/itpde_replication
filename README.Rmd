@@ -67,11 +67,15 @@ There are inconsistencies in UN datasets (i.e., "U.R. of Tanzania: Mainland" ver
 
 Also we need UN COMTRADE data here to match country numeric ID to ISO-3 codes. Not all ID-Country pairs match (i.e., France, Italy, etc)
 
+## Mirroring
+
+To be consistent with the article:
+
+1. I took the import_value_usd as export value by taking the importer reported value
+2. When the import_value_usd is 0, I use what the exporter says and I assing mirror flag = 1
+
 ## Download dates
 
 UN COMTRADE data 2022-10-31
 FAO 2022-10-24
-
-
-
-
+UNIDO 2022-12-13

@@ -421,11 +421,15 @@ if (!"fishing_forestry_country_iso3_codes" %in% dbListTables(con)) {
   dbDisconnect(con, shutdown = T)
 }
 
-# Tidy trade data ----
+# Tidy data (combine trade and production in same final table) ----
 
 con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
 if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
+  ## Tidy production -----
+
+  ### Get raw production and convert all currencies to USD ----
+
   d_prod <- tbl(con, "fishing_forestry_undata_production_raw") %>%
     filter(item == "Output, at basic prices") %>%
     select(year, country = country_or_area, sub_item, production_local_currency = value) %>%
@@ -450,6 +454,8 @@ if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
     mutate(production_usd = production_local_currency * constant) %>%
     select(-constant, -production_local_currency) %>%
     collect()
+
+  ### Fix ISO-3 codes ----
 
   d_prod <- d_prod %>%
     mutate(
@@ -477,6 +483,8 @@ if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
   # A02 ISIC 4 = ITPDE INDUSTRY 27
   # A03 ISIC 4 = ITPDE INDUSTRY 28
 
+  ### Add industry ID -----
+
   d_prod <- d_prod %>%
     mutate(
       industry_id = case_when(
@@ -488,6 +496,8 @@ if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
 
   d_prod <- d_prod %>%
     arrange(country_iso3, year)
+
+  ### Add flags ----
 
   d_prod <- d_prod %>%
     rename(exporter_iso3 = country_iso3) %>%
@@ -504,18 +514,60 @@ if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
     filter(trade >= 0) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, trade)
 
+  d_prod <- d_prod %>%
+    mutate(
+      flag_mirror = 0L,
+      flag_zero = case_when(
+        trade > 0 ~ "p",
+        trade == 0 ~ "r"
+      ),
+      flag_flow = "d"
+    )
+
+  ## Trade data ----
+
+  ### Get imports/exports ----
+
   d_trade <- tbl(con, "fishing_forestry_comtrade_trade_raw") %>%
     select(year, exporter_iso3 = partner_iso3, importer_iso3 = reporter_iso3,
-           industry_id, import_value_usd) %>%
+           industry_id, import_value_usd, export_value_usd) %>%
     group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
-    summarise(trade = sum(import_value_usd, na.rm = T)) %>%
+    summarise(
+      import_value_usd = sum(import_value_usd, na.rm = T),
+      export_value_usd = sum(export_value_usd, na.rm = T)
+    ) %>%
     collect()
 
   d_trade <- d_trade %>%
     arrange(exporter_iso3, year)
 
+  ### Add flags -----
+
   d_trade <- d_trade %>%
-    bind_rows(d_prod)
+    mutate(
+      trade = case_when(
+        import_value_usd == 0 ~ export_value_usd,
+        TRUE ~ import_value_usd
+      ),
+      flag_mirror = case_when(
+        trade == import_value_usd ~ 0L,
+        TRUE ~ 1L
+      ),
+      flag_zero = case_when(
+        trade > 0 ~ "p",
+        trade == 0 ~ "r" # I still need to add "flag = u" later
+      ),
+      flag_flow = "i"
+    )
+
+  ## Combine tables ----
+
+  d_trade <- d_trade %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, trade, flag_mirror, flag_zero, flag_flow) %>%
+    bind_rows(
+      d_prod %>%
+        select(year, exporter_iso3, importer_iso3, industry_id, trade, flag_mirror, flag_zero, flag_flow)
+    )
 
   dbWriteTable(con, "fishing_forestry_comtrade_trade_tidy", d_trade, overwrite = T)
 

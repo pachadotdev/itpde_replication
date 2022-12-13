@@ -1,0 +1,465 @@
+library(uncomtrademisc)
+library(readr)
+library(janitor)
+library(dplyr)
+library(duckdb)
+library(DBI)
+library(tidyr)
+library(arrow)
+library(usitcgravity)
+library(purrr)
+library(readxl)
+
+# Download UN COMTRADE trade data ----
+
+dir_comtrade_data <- "inp/hs-rev1992/"
+
+if (!dir.exists(dir_comtrade_data)) {
+  data_downloading(
+    subset_years = 1988:2020, arrow = T, token = 1, dataset = 1,
+    remove_old_files = 1, parallel = 2, subdir = "inp")
+}
+
+# Download UNIDO production data ----
+
+# FROM THE ARTICLE: To take full advantage of MINSTAT, and to ensure maximum
+# coverage in ITPD-E-R02, we use the ISIC rev. 3 and ISIC rev. 4 versions of
+# MINSTAT. Availability of production data determined the last year of coverage
+# for ‘Mining & Energy’ as 2019.
+
+# ISIC 3
+# the file was downloaded from the browser and points to
+# https://stat.unido.org/database/MINSTAT%202022,%20ISIC%20Revision%203
+# see image inp/unido_mining_and_energy_isic3_production.png
+# the file is inp/export20221213213948_42867e0a-8404-428a-aaed-43b661c72bf0.xlsx
+
+# ISIC 4
+# the file was downloaded from the browser and points to
+# https://stat.unido.org/database/MINSTAT%202022,%20ISIC%20Revision%204
+# see image inp/unido_mining_and_energy_isic4_production.png
+# the file is inp/export20221213213948_42867e0a-8404-428a-aaed-43b661c72bf0.xlsx
+
+# Read codes ----
+
+# FROM THE ARTICLE: A list of the ITPD-E mining and energy industries, together
+# with the concordance that we created between ISIC rev. 3, ISIC rev. 4, and
+# ITPD-E-R02 appear in Table 6.
+
+# production_isic3 <- read_excel("inp/export20221213213948_42867e0a-8404-428a-aaed-43b661c72bf0.xlsx",
+#                                sheet = "Data") %>%
+#   clean_names() %>%
+#   filter(table_description_2 == "Output", unit == "$")
+#
+#   inner_join(
+#     article_table6 %>%
+#       select(itpd_e_code, isic3) %>%
+#       mutate(isic3 = as.character(isic3)),
+#     by = c("isic" = "isic3")
+#   )
+
+article_table6 <- read_csv("out/article_table6.csv")
+
+# I only have HS92 to ISIC3 table => I use ISIC3
+
+# look at inp/isic3.txt
+isic3_mining <- as.character(c(
+  # 29 - Mining and agglomeration of hard coal
+  1010,
+  # 30 - Mining and agglomeration of lignite
+  1020,
+  # 32 - Mining of iron ores
+  1310,
+  # 33 - Other mining and quarrying
+  1410,1421,1422,1429
+))
+
+# recycle from the previous codes
+con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
+
+if (!"mining_energy_isic3_to_hs92" %in% dbListTables(con)) {
+  mining_codes <- tbl(con, "fishing_forestry_isic3_to_hs92") %>%
+    filter(isic3 %in% isic3_mining) %>%
+    collect() %>%
+    select(-isic3_industry_code) %>%
+    mutate(
+      industry_id = case_when(
+        isic3 == "1010" ~ 29,
+        isic3 == "1020" ~ 30,
+        isic3 == "1310" ~ 32,
+        TRUE ~ 33
+      )
+    ) %>%
+    distinct(hs92, .keep_all = T)
+
+  dbWriteTable(con, "mining_energy_isic3_to_hs92", mining_codes, overwrite = T)
+}
+
+dbDisconnect(con, shutdown = T)
+
+# Import raw trade data ----
+
+con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
+
+if (!"mining_energy_comtrade_trade_raw" %in% dbListTables(con)) {
+  map(
+    1988:2020,
+    function(y) {
+      message(y)
+
+      con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
+
+      d_imp <- open_dataset(
+        sources = paste0(dir_comtrade_data, "parquet/6/import"),
+        partitioning = schema(
+          year = int32(), reporter_iso = string())
+      ) %>%
+        filter(year == y) %>%
+        filter(!(partner_iso %in% c("all","wld"))) %>%
+        select(year, reporter_iso3 = reporter_iso,
+               partner_iso3 = partner_iso,
+               commodity_code,
+               trade_value_usd_imp = trade_value_usd,
+               trade_value_tonnes_imp = netweight_kg) %>%
+        collect() %>%
+        inner_join(
+          tbl(con, "mining_energy_isic3_to_hs92") %>%
+            select(commodity_code = hs92, industry_id) %>%
+            collect()
+        ) %>%
+        mutate(trade_value_tonnes_imp = trade_value_tonnes_imp * 1000) %>%
+        group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
+        summarise_if(is.double, sum, na.rm = T) %>%
+        ungroup()
+
+      d_exp <- open_dataset(
+        sources = paste0(dir_comtrade_data, "parquet/6/import"),
+        partitioning = schema(
+          year = int32(), reporter_iso = string())
+      ) %>%
+        filter(year == y) %>%
+        filter(!(partner_iso %in% c("all","wld"))) %>%
+        select(year, reporter_iso3 = reporter_iso,
+               partner_iso3 = partner_iso,
+               commodity_code,
+               trade_value_usd_exp = trade_value_usd,
+               trade_value_tonnes_exp = netweight_kg) %>%
+        collect() %>%
+        inner_join(
+          tbl(con, "mining_energy_isic3_to_hs92") %>%
+            select(commodity_code = hs92, industry_id) %>%
+            collect()
+        ) %>%
+        mutate(trade_value_tonnes_exp = trade_value_tonnes_exp * 1000) %>%
+        group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
+        summarise_if(is.double, sum, na.rm = T) %>%
+        ungroup()
+
+      d_imp <- d_imp %>%
+        full_join(d_exp) %>%
+        rename(
+          export_value_usd = trade_value_usd_exp,
+          export_quantity_tonnes = trade_value_tonnes_exp,
+
+          import_value_usd = trade_value_usd_imp,
+          import_quantity_tonnes = trade_value_tonnes_imp
+        )
+
+      rm(d_exp)
+
+      d_imp <- d_imp %>%
+        mutate(
+          reporter_iso3 = toupper(case_when(
+            reporter_iso3 == "e-490" ~ "twn",
+            reporter_iso3 %in% c("drc", "zar") ~ "cod",
+            reporter_iso3 == "rom" ~ "rou",
+            TRUE ~ reporter_iso3
+          )),
+          partner_iso3 = toupper(case_when(
+            partner_iso3 == "e-490" ~ "twn",
+            partner_iso3 %in% c("drc", "zar") ~ "cod",
+            partner_iso3 == "rom" ~ "rou",
+            TRUE ~ partner_iso3
+          ))
+        )
+
+      d_imp <- d_imp %>%
+        inner_join(
+          tbl(con, "fishing_forestry_country_names") %>%
+            collect() %>%
+            distinct() %>%
+            rename(reporter_iso3 = country_iso3)
+        ) %>%
+        inner_join(
+          tbl(con, "fishing_forestry_country_names") %>%
+            collect() %>%
+            distinct() %>%
+            rename(partner_iso3 = country_iso3)
+        ) %>%
+        group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
+        summarise_if(is.numeric, sum, na.rm = T)
+
+      dbWriteTable(con, "mining_energy_comtrade_trade_raw", d_imp,
+                   append = T)
+
+      dbDisconnect(con, shutdown = T)
+    }
+  )
+}
+
+# CONTINUE FROM HERE ----
+# Import raw production data ----
+
+con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
+
+if (!"fishing_forestry_undata_production_raw" %in% dbListTables(con)) {
+  d_prod <- read_delim(txt_production_isic4,
+                       delim = "|",
+                       escape_double = FALSE,
+                       col_types = cols(`Sub Group` = col_character(),
+                                        Year = col_character(), Series = col_character(),
+                                        `SNA system` = col_character(), Value = col_character(),
+                                        `Value Footnotes` = col_character()),
+                       trim_ws = TRUE, n_max = 25987) %>%
+    clean_names()
+
+  d_prod_footnotes <- read_delim(txt_production_isic4,
+                                 delim = "|",
+                                 escape_double = FALSE,
+                                 trim_ws = TRUE, skip = 25988) %>%
+    clean_names()
+
+  unique(d_prod$sub_item)
+  unique(d_prod$value_footnotes)
+
+  d_prod <- d_prod %>%
+    mutate(
+      year = as.integer(year),
+      sna_system = as.integer(sna_system),
+      series = as.integer(series),
+      value = as.double(value)
+    )
+
+  dbWriteTable(con, "fishing_forestry_undata_production_raw", d_prod, append = T)
+  dbWriteTable(con, "fishing_forestry_undata_production_raw_footnotes", d_prod_footnotes, append = T)
+
+  dbDisconnect(con, shutdown = T)
+}
+
+# Import GDP data ----
+
+con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
+
+if (!"fishing_forestry_gdp_unstats" %in% dbListTables(con)) {
+  gdp_local <- read_excel(xlsx_gdp_local, skip = 2) %>%
+    pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_local_currency") %>%
+    clean_names()
+
+  gdp_usd <- read_excel(xlsx_gdp_usd, skip = 2) %>%
+    pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_usd") %>%
+    clean_names()
+
+  gdp_usd <- gdp_usd %>%
+    inner_join(gdp_local)
+
+  gdp_usd <- gdp_usd %>%
+    select(year, country_id, country, indicator_name, currency, gdp_local_currency, gdp_usd) %>%
+    mutate(year = as.integer(year))
+
+  dbWriteTable(con, "fishing_forestry_gdp_unstats", gdp_usd, append = T)
+
+  dbDisconnect(con, shutdown = T)
+}
+
+con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
+
+if (!"fishing_forestry_country_iso3_codes" %in% dbListTables(con)) {
+  d_iso_codes <- open_dataset(
+    sources = paste0(dir_comtrade_data, "parquet/6/import"),
+    partitioning = schema(
+      year = int32(), reporter_iso = string())
+  )
+
+  d_iso_codes_2 <- map_df(
+    1988:2020,
+    function(y) {
+      message(y)
+      d_iso_codes %>%
+        filter(year == y) %>%
+        select(reporter_iso, reporter_code, reporter) %>%
+        distinct() %>%
+        collect()
+    }
+  )
+
+  d_iso_codes_2 <- d_iso_codes_2 %>%
+    distinct() %>%
+    arrange(reporter_code) %>%
+    select(country_iso3 = reporter_iso, country_id = reporter_code,
+           country = reporter)
+
+  d_iso_codes_2 <- d_iso_codes_2 %>%
+    mutate(
+      country_iso3 = toupper(country_iso3),
+      country = toupper(country)
+    )
+
+  rm(d_iso_codes_2)
+  gc()
+
+  dbWriteTable(con, "fishing_forestry_country_iso3_codes", d_iso_codes_2, overwrite = T)
+
+  dbDisconnect(con, shutdown = T)
+}
+
+# Tidy data (combine trade and production in same final table) ----
+
+con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
+
+if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
+  ## Tidy production -----
+
+  ### Get raw production and convert all currencies to USD ----
+
+  d_prod <- tbl(con, "fishing_forestry_undata_production_raw") %>%
+    filter(item == "Output, at basic prices") %>%
+    select(year, country = country_or_area, sub_item, production_local_currency = value) %>%
+    mutate(country = toupper(country)) %>%
+    left_join(
+      tbl(con, "fishing_forestry_gdp_unstats") %>%
+        filter(indicator_name == "Gross Domestic Product (GDP)") %>%
+        mutate(
+          constant = gdp_usd / gdp_local_currency,
+          year = as.integer(year),
+          country = toupper(ifelse(
+            country == "U.R. of Tanzania: Mainland" , "Tanzania - Mainland", country
+          ))
+        ) %>%
+        filter(year %in% 1988:2020) %>%
+        select(year, country, country_id, constant)
+    ) %>%
+    left_join(
+      tbl(con, "fishing_forestry_country_iso3_codes")
+    ) %>%
+    # select(year, country_iso3, production_local_currency, constant) %>%
+    mutate(production_usd = production_local_currency * constant) %>%
+    select(-constant, -production_local_currency) %>%
+    collect()
+
+  ### Fix ISO-3 codes ----
+
+  d_prod <- d_prod %>%
+    mutate(
+      country_iso3 = case_when(
+        country == "BOSNIA AND HERZEGOVINA" ~ "BIH", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
+        country == "BRITISH VIRGIN ISLANDS" ~ "VGB", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
+        country == "CAYMAN ISLANDS" ~ "CYM", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
+        country == "FRANCE" ~ "FRA",
+        country == "INDIA" ~ "IND",
+        country == "IRAN (ISLAMIC REPUBLIC OF)" ~ "IRN", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
+        country == "ITALY" ~ "IND",
+        country == "NORWAY" ~ "NOR",
+        country == "TANZANIA - MAINLAND" ~ "TZA",
+        country == "UNITED STATES" ~ "USA",
+        country == "ZANZIBAR" ~ "EAZ", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3,
+        TRUE ~ country_iso3
+      )
+    )
+
+  d_prod %>%
+    filter(is.na(country_iso3)) %>%
+    select(country, country_iso3) %>%
+    distinct()
+
+  # A02 ISIC 4 = ITPDE INDUSTRY 27
+  # A03 ISIC 4 = ITPDE INDUSTRY 28
+
+  ### Add industry ID -----
+
+  d_prod <- d_prod %>%
+    mutate(
+      industry_id = case_when(
+        sub_item == "Forestry and logging (02)" ~ 27L,
+        sub_item == "Fishing and aquaculture (03)" ~ 28L
+      )
+    ) %>%
+    select(year, country_iso3, industry_id, production_usd)
+
+  d_prod <- d_prod %>%
+    arrange(country_iso3, year)
+
+  ### Add flags ----
+
+  d_prod <- d_prod %>%
+    rename(exporter_iso3 = country_iso3) %>%
+    mutate(importer_iso3 = exporter_iso3) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, production_int_usd = production_usd) %>%
+    full_join(
+      tbl(con, "fishing_forestry_comtrade_trade_raw") %>%
+        select(year, exporter_iso3 = partner_iso3, industry_id, import_value_usd) %>%
+        group_by(year, exporter_iso3, industry_id) %>%
+        summarise(total_exports = sum(import_value_usd, na.rm = T)) %>%
+        collect()
+    ) %>%
+    mutate(trade = production_int_usd - total_exports) %>%
+    filter(trade >= 0) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, trade)
+
+  d_prod <- d_prod %>%
+    mutate(
+      flag_mirror = 0L,
+      flag_zero = case_when(
+        trade > 0 ~ "p",
+        trade == 0 ~ "r"
+      ),
+      flag_flow = "d"
+    )
+
+  ## Trade data ----
+
+  ### Get imports/exports ----
+
+  d_trade <- tbl(con, "fishing_forestry_comtrade_trade_raw") %>%
+    select(year, exporter_iso3 = partner_iso3, importer_iso3 = reporter_iso3,
+           industry_id, import_value_usd, export_value_usd) %>%
+    group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
+    summarise(
+      import_value_usd = sum(import_value_usd, na.rm = T),
+      export_value_usd = sum(export_value_usd, na.rm = T)
+    ) %>%
+    collect()
+
+  d_trade <- d_trade %>%
+    arrange(exporter_iso3, year)
+
+  ### Add flags -----
+
+  d_trade <- d_trade %>%
+    mutate(
+      trade = case_when(
+        import_value_usd == 0 ~ export_value_usd,
+        TRUE ~ import_value_usd
+      ),
+      flag_mirror = case_when(
+        trade == import_value_usd ~ 0L,
+        TRUE ~ 1L
+      ),
+      flag_zero = case_when(
+        trade > 0 ~ "p",
+        trade == 0 ~ "r" # I still need to add "flag = u" later
+      ),
+      flag_flow = "i"
+    )
+
+  ## Combine tables ----
+
+  d_trade <- d_trade %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, trade, flag_mirror, flag_zero, flag_flow) %>%
+    bind_rows(
+      d_prod %>%
+        select(year, exporter_iso3, importer_iso3, industry_id, trade, flag_mirror, flag_zero, flag_flow)
+    )
+
+  dbWriteTable(con, "fishing_forestry_comtrade_trade_tidy", d_trade, overwrite = T)
+
+  dbDisconnect(con, shutdown = T)
+}
