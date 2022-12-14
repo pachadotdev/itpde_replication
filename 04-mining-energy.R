@@ -292,6 +292,8 @@ if (!"mining_energy_trade_tidy" %in% dbListTables(con)) {
   d_prod <- d_prod %>%
     select(year, importer_iso3, industry_id, production_int_usd = value2)
 
+  ### Compute internal flow ----
+
   d_prod <- d_prod %>%
     mutate(
       year = as.integer(year),
@@ -309,21 +311,6 @@ if (!"mining_energy_trade_tidy" %in% dbListTables(con)) {
     select(year, exporter_iso3, importer_iso3, industry_id, trade)
 
   ### Add flags ----
-
-  d_prod <- d_prod %>%
-    rename(exporter_iso3 = country_iso3) %>%
-    mutate(importer_iso3 = exporter_iso3) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, production_int_usd = production_usd) %>%
-    full_join(
-      tbl(con, "fishing_forestry_comtrade_trade_raw") %>%
-        select(year, exporter_iso3 = partner_iso3, industry_id, import_value_usd) %>%
-        group_by(year, exporter_iso3, industry_id) %>%
-        summarise(total_exports = sum(import_value_usd, na.rm = T)) %>%
-        collect()
-    ) %>%
-    mutate(trade = production_int_usd - total_exports) %>%
-    filter(trade >= 0) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, trade)
 
   d_prod <- d_prod %>%
     mutate(
