@@ -67,7 +67,7 @@ From the article:
 > the husk (paddy or rough)”
 
 > …we classify all industries between 1500 and 1601 of ISIC rev. 3 as
-> manufacturing indus- tries.
+> manufacturing industries.
 
 ## Production data
 

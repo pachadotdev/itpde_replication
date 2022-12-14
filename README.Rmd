@@ -54,8 +54,7 @@ From the article:
 
 > FAOSTAT does not include international trade data for FCL item 27 "rice (paddy)". Instead, we use data from the UN Commodity Trade Statistics Database (COMTRADE), HS sector 100,610 "Cereals; rice in the husk (paddy or rough)"
 
-> ...we classify all industries between 1500 and 1601 of ISIC rev. 3 as manufacturing indus-
-tries.
+> ...we classify all industries between 1500 and 1601 of ISIC rev. 3 as manufacturing industries.
 
 ## Production data
 

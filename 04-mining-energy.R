@@ -45,18 +45,6 @@ if (!dir.exists(dir_comtrade_data)) {
 # with the concordance that we created between ISIC rev. 3, ISIC rev. 4, and
 # ITPD-E-R02 appear in Table 6.
 
-# production_isic3 <- read_excel("inp/export20221213213948_42867e0a-8404-428a-aaed-43b661c72bf0.xlsx",
-#                                sheet = "Data") %>%
-#   clean_names() %>%
-#   filter(table_description_2 == "Output", unit == "$")
-#
-#   inner_join(
-#     article_table6 %>%
-#       select(itpd_e_code, isic3) %>%
-#       mutate(isic3 = as.character(isic3)),
-#     by = c("isic" = "isic3")
-#   )
-
 article_table6 <- read_csv("out/article_table6.csv")
 
 # I only have HS92 to ISIC3 table => I use ISIC3
@@ -206,107 +194,55 @@ if (!"mining_energy_comtrade_trade_raw" %in% dbListTables(con)) {
   )
 }
 
-# CONTINUE FROM HERE ----
 # Import raw production data ----
 
 con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
-if (!"fishing_forestry_undata_production_raw" %in% dbListTables(con)) {
-  d_prod <- read_delim(txt_production_isic4,
-                       delim = "|",
-                       escape_double = FALSE,
-                       col_types = cols(`Sub Group` = col_character(),
-                                        Year = col_character(), Series = col_character(),
-                                        `SNA system` = col_character(), Value = col_character(),
-                                        `Value Footnotes` = col_character()),
-                       trim_ws = TRUE, n_max = 25987) %>%
-    clean_names()
-
-  d_prod_footnotes <- read_delim(txt_production_isic4,
-                                 delim = "|",
-                                 escape_double = FALSE,
-                                 trim_ws = TRUE, skip = 25988) %>%
-    clean_names()
-
-  unique(d_prod$sub_item)
-  unique(d_prod$value_footnotes)
-
-  d_prod <- d_prod %>%
-    mutate(
-      year = as.integer(year),
-      sna_system = as.integer(sna_system),
-      series = as.integer(series),
-      value = as.double(value)
-    )
-
-  dbWriteTable(con, "fishing_forestry_undata_production_raw", d_prod, append = T)
-  dbWriteTable(con, "fishing_forestry_undata_production_raw_footnotes", d_prod_footnotes, append = T)
-
-  dbDisconnect(con, shutdown = T)
-}
-
-# Import GDP data ----
-
-con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
-
-if (!"fishing_forestry_gdp_unstats" %in% dbListTables(con)) {
-  gdp_local <- read_excel(xlsx_gdp_local, skip = 2) %>%
-    pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_local_currency") %>%
-    clean_names()
-
-  gdp_usd <- read_excel(xlsx_gdp_usd, skip = 2) %>%
-    pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_usd") %>%
-    clean_names()
-
-  gdp_usd <- gdp_usd %>%
-    inner_join(gdp_local)
-
-  gdp_usd <- gdp_usd %>%
-    select(year, country_id, country, indicator_name, currency, gdp_local_currency, gdp_usd) %>%
-    mutate(year = as.integer(year))
-
-  dbWriteTable(con, "fishing_forestry_gdp_unstats", gdp_usd, append = T)
-
-  dbDisconnect(con, shutdown = T)
-}
-
-con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
-
-if (!"fishing_forestry_country_iso3_codes" %in% dbListTables(con)) {
-  d_iso_codes <- open_dataset(
-    sources = paste0(dir_comtrade_data, "parquet/6/import"),
-    partitioning = schema(
-      year = int32(), reporter_iso = string())
-  )
-
-  d_iso_codes_2 <- map_df(
-    1988:2020,
-    function(y) {
-      message(y)
-      d_iso_codes %>%
-        filter(year == y) %>%
-        select(reporter_iso, reporter_code, reporter) %>%
+if (!"mining_energy_unido_production_raw" %in% dbListTables(con)) {
+  production_isic3 <- read_excel("inp/export20221213213948_42867e0a-8404-428a-aaed-43b661c72bf0.xlsx",
+                                 sheet = "Data") %>%
+    clean_names() %>%
+    filter(table_description_2 == "Output", unit == "$") %>%
+    inner_join(
+      tbl(con, "mining_energy_isic3_to_hs92") %>%
+        select(isic3, industry_id) %>%
         distinct() %>%
-        collect()
-    }
-  )
-
-  d_iso_codes_2 <- d_iso_codes_2 %>%
-    distinct() %>%
-    arrange(reporter_code) %>%
-    select(country_iso3 = reporter_iso, country_id = reporter_code,
-           country = reporter)
-
-  d_iso_codes_2 <- d_iso_codes_2 %>%
-    mutate(
-      country_iso3 = toupper(country_iso3),
-      country = toupper(country)
+        collect() %>%
+        mutate(isic3 = substr(isic3, 1, 3)) %>%
+        distinct(),
+      by = c("isic" = "isic3")
     )
 
-  rm(d_iso_codes_2)
-  gc()
+  # I need to convert those 1.23E4 to 1.23*10^4 and store a consistent value column
 
-  dbWriteTable(con, "fishing_forestry_country_iso3_codes", d_iso_codes_2, overwrite = T)
+  production_isic3 <- production_isic3 %>%
+    mutate(value = ifelse(value == "...", NA, value))
+
+  production_isic3 <- production_isic3 %>%
+    mutate(
+      ten_factor = case_when(
+        grepl("E", value) ~ TRUE,
+        TRUE ~ FALSE
+      )
+    )
+
+  production_isic3 <- production_isic3 %>%
+    mutate(
+      power = case_when(
+        ten_factor == TRUE ~ gsub(".*E", "", value),
+        TRUE ~  NA_character_
+      ),
+      value2 = case_when(
+        ten_factor == TRUE ~ as.numeric(gsub("E.*", "", value)) * 10^ten_factor,
+        TRUE ~  as.numeric(value)
+      )
+    )
+
+  production_isic3 <- production_isic3 %>%
+    group_by(year, country_description, industry_id) %>%
+    summarise(value2 = sum(value2, na.rm = T))
+
+  dbWriteTable(con, "mining_energy_unido_production_raw", production_isic3, append = T)
 
   dbDisconnect(con, shutdown = T)
 }
