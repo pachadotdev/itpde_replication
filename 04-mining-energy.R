@@ -251,77 +251,62 @@ if (!"mining_energy_unido_production_raw" %in% dbListTables(con)) {
 
 con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
-if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
+if (!"mining_energy_trade_tidy" %in% dbListTables(con)) {
   ## Tidy production -----
 
-  ### Get raw production and convert all currencies to USD ----
+  ### Country names as ISO-3 ----
 
-  d_prod <- tbl(con, "fishing_forestry_undata_production_raw") %>%
-    filter(item == "Output, at basic prices") %>%
-    select(year, country = country_or_area, sub_item, production_local_currency = value) %>%
-    mutate(country = toupper(country)) %>%
+  d_prod <- tbl(con, "mining_energy_unido_production_raw") %>%
+    mutate(country_description = toupper(country_description)) %>%
+    rename(country = country_description) %>%
     left_join(
-      tbl(con, "fishing_forestry_gdp_unstats") %>%
-        filter(indicator_name == "Gross Domestic Product (GDP)") %>%
-        mutate(
-          constant = gdp_usd / gdp_local_currency,
-          year = as.integer(year),
-          country = toupper(ifelse(
-            country == "U.R. of Tanzania: Mainland" , "Tanzania - Mainland", country
-          ))
-        ) %>%
-        filter(year %in% 1988:2020) %>%
-        select(year, country, country_id, constant)
+      tbl(con, "fishing_forestry_country_iso3_codes") %>%
+        select(importer_iso3 = country_iso3, country)
     ) %>%
-    left_join(
-      tbl(con, "fishing_forestry_country_iso3_codes")
-    ) %>%
-    # select(year, country_iso3, production_local_currency, constant) %>%
-    mutate(production_usd = production_local_currency * constant) %>%
-    select(-constant, -production_local_currency) %>%
     collect()
 
-  ### Fix ISO-3 codes ----
+  d_prod <- d_prod %>%
+    mutate(country = iconv(country, to = "ASCII//TRANSLIT", sub = ""))
 
   d_prod <- d_prod %>%
     mutate(
-      country_iso3 = case_when(
-        country == "BOSNIA AND HERZEGOVINA" ~ "BIH", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
-        country == "BRITISH VIRGIN ISLANDS" ~ "VGB", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
-        country == "CAYMAN ISLANDS" ~ "CYM", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
-        country == "FRANCE" ~ "FRA",
-        country == "INDIA" ~ "IND",
-        country == "IRAN (ISLAMIC REPUBLIC OF)" ~ "IRN", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
-        country == "ITALY" ~ "IND",
-        country == "NORWAY" ~ "NOR",
-        country == "TANZANIA - MAINLAND" ~ "TZA",
-        country == "UNITED STATES" ~ "USA",
-        country == "ZANZIBAR" ~ "EAZ", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3,
-        TRUE ~ country_iso3
+      importer_iso3 = case_when(
+        country == "CHINA, TAIWAN PROVINCE" ~ "TWN",
+        country == "REPUBLIC OF KOREA" ~ "KOR",
+        country == "TURKIYE" ~ "TUR",
+        country == "NETHERLANDS ANTILLES" ~ "ANT",
+        country == "UNITED STATES OF AMERICA" ~ "USA",
+        country == "IRAN (ISLAMIC REPUBLIC OF)" ~ "IRN",
+        country == "REPUBLIC OF MOLDOVA" ~ "MDA",
+        country == "SYRIAN ARAB REPUBLIC" ~ "SYR",
+        country == "COOK ISLANDS" ~ "COK",
+        country == "CURACAO" ~ "CUW",
+        country == "MARSHALL ISLANDS" ~ "MHL",
+        TRUE ~ importer_iso3
       )
     )
 
   d_prod %>%
-    filter(is.na(country_iso3)) %>%
-    select(country, country_iso3) %>%
-    distinct()
+    filter(is.na(importer_iso3))
 
-  # A02 ISIC 4 = ITPDE INDUSTRY 27
-  # A03 ISIC 4 = ITPDE INDUSTRY 28
-
-  ### Add industry ID -----
+  d_prod <- d_prod %>%
+    select(year, importer_iso3, industry_id, production_int_usd = value2)
 
   d_prod <- d_prod %>%
     mutate(
-      industry_id = case_when(
-        sub_item == "Forestry and logging (02)" ~ 27L,
-        sub_item == "Fishing and aquaculture (03)" ~ 28L
-      )
+      year = as.integer(year),
+      exporter_iso3 = importer_iso3
     ) %>%
-    select(year, country_iso3, industry_id, production_usd)
-
-  d_prod <- d_prod %>%
-    arrange(country_iso3, year)
+    full_join(
+      tbl(con, "mining_energy_comtrade_trade_raw") %>%
+        select(year, exporter_iso3 = partner_iso3, industry_id, import_value_usd) %>%
+        group_by(year, exporter_iso3, industry_id) %>%
+        summarise(total_exports = sum(import_value_usd, na.rm = T)) %>%
+        collect()
+    ) %>%
+    mutate(trade = production_int_usd - total_exports) %>%
+    filter(trade >= 0) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, trade)
 
   ### Add flags ----
 
