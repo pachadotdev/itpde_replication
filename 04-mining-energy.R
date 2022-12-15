@@ -367,7 +367,7 @@ if (!"mining_energy_trade_tidy" %in% dbListTables(con)) {
         select(year, exporter_iso3, importer_iso3, industry_id, trade, flag_mirror, flag_zero, flag_flow)
     )
 
-  dbWriteTable(con, "fishing_forestry_comtrade_trade_tidy", d_trade, overwrite = T)
+  dbWriteTable(con, "mining_energy_comtrade_trade_tidy", d_trade, overwrite = T)
 
   dbDisconnect(con, shutdown = T)
 }
