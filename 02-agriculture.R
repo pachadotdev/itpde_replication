@@ -4,7 +4,8 @@ library(janitor)
 library(dplyr)
 library(tidyr)
 library(purrr)
-library(duckdb)
+library(RPostgres)
+library(readxl)
 
 # Download trade data ----
 
@@ -53,11 +54,56 @@ if (!file.exists(csv_fcl_id)) {
 # (inp/faostats_country_correspondence.png)
 # the file is inp/faostat_country_correspondence.csv
 
+# Download GDPs to convert currencies ----
+
+url_gdp_local <- "https://unstats.un.org/unsd/amaapi/api/file/1"
+url_gdp_usd <- "https://unstats.un.org/unsd/amaapi/api/file/2"
+
+xlsx_gdp_local <- "inp/unstats_gdp_local_current_prices.xlsx"
+xlsx_gdp_usd <- "inp/unstats_gdp_usd_current_prices.xlsx"
+
+if (!file.exists(xlsx_gdp_local)) {
+  download.file(url_gdp_local, xlsx_gdp_local)
+}
+
+if (!file.exists(xlsx_gdp_usd)) {
+  download.file(url_gdp_usd, xlsx_gdp_usd)
+}
+
+# Import GDP data ----
+
+con <- dbConnect(
+  Postgres(),
+  host = "localhost",
+  dbname = "itpde_replication",
+  user = Sys.getenv("LOCAL_SQL_USR"),
+  password = Sys.getenv("LOCAL_SQL_PWD")
+)
+
+if (!"gdp_unstats" %in% dbListTables(con)) {
+  gdp_local <- read_excel(xlsx_gdp_local, skip = 2) %>%
+    pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_local_currency") %>%
+    clean_names()
+
+  gdp_usd <- read_excel(xlsx_gdp_usd, skip = 2) %>%
+    pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_usd") %>%
+    clean_names()
+
+  gdp_usd <- gdp_usd %>%
+    full_join(gdp_local)
+
+  gdp_usd <- gdp_usd %>%
+    select(year, country_id, country, indicator_name, currency, gdp_local_currency, gdp_usd) %>%
+    mutate(year = as.integer(year))
+
+  dbWriteTable(con, "gdp_unstats", gdp_usd, overwrite = T)
+
+  rm(gdp_local, gdp_usd)
+}
+
 # Import raw trade data ----
 
-con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
-
-if (!"agriculture_fao_trade_raw" %in% dbListTables(con)) {
+if (!"fao_trade_matrix" %in% dbListTables(con)) {
   fao_trade <- read_csv("inp/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
     clean_names()
 
@@ -88,38 +134,89 @@ if (!"agriculture_fao_trade_raw" %in% dbListTables(con)) {
     left_join(fao_unit_code) %>%
     select(reporter_country_code:element_code, unit_code, y1986:y2020)
 
-  dbWriteTable(con, "agriculture_fao_trade_raw", fao_trade)
-  dbWriteTable(con, "agriculture_fao_element_code_raw", fao_element_code)
-  dbWriteTable(con, "agriculture_fao_unit_code_raw", fao_unit_code)
+  gc()
 
-  rm(fao_trade)
+  fao_trade <- fao_trade %>%
+    group_by(reporter_country_code) %>%
+    nest()
+
+  fao_trade <- fao_trade %>%
+    arrange(reporter_country_code)
+
+  fao_trade <- map_df(
+    fao_trade$reporter_country_code,
+    function(r) {
+      print(r)
+      fao_trade %>%
+        filter(
+          reporter_country_code == r
+        ) %>%
+        unnest(data) %>%
+        pivot_longer(y1986:y2020, names_to = "year", values_to = "value") %>%
+        mutate(year = as.integer(gsub("y", "", year))) %>%
+        filter(!is.na(value))
+    }
+  )
+
+  gc()
+
+  dbWriteTable(con, "fao_trade_matrix_element_code", fao_element_code, overwrite = T)
+  dbWriteTable(con, "fao_trade_matrix_unit_code", fao_unit_code, overwrite = T)
+
+  fao_trade <- fao_trade %>%
+    ungroup() %>%
+    mutate(p = floor(row_number() / 2500000) + 1) %>%
+    group_by(p) %>%
+    nest() %>%
+    ungroup() %>%
+    select(data) %>%
+    pull()
+
+  gc()
+
+  map(
+    seq_along(fao_trade),
+    function(x) {
+      message(sprintf("Writing fragment %s of %s", x, length(fao_trade)))
+      dbWriteTable(con, "fao_trade_matrix", fao_trade[[x]], append = TRUE, overwrite = FALSE)
+    }
+  )
+
+  rm(fao_trade, fao_element_code, fao_unit_code)
   gc()
 }
 
-dbDisconnect(con, shutdown = T)
-
 # Import raw production data ----
 
-con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
-
-if (!"agriculture_fao_production_raw" %in% dbListTables(con)) {
+if (!"fao_production_matrix" %in% dbListTables(con)) {
   fao_production <- read_csv("inp/faostat_production_matrix/Value_of_Production_E_All_Data_NOFLAG.csv") %>%
     clean_names()
 
   fao_production <- fao_production %>%
     select(area_code, item_code, unit, y1986:y2020)
 
-  dbWriteTable(con, "agriculture_fao_production_raw", fao_production)
+  fao_production <- fao_production %>%
+    pivot_longer(y1986:y2020, names_to = "year", values_to = "value") %>%
+    mutate(year = as.integer(gsub("y", "", year))) %>%
+    filter(!is.na(value))
 
-  rm(fao_production)
+  fao_unit_code <- fao_production %>%
+    select(unit) %>%
+    distinct() %>%
+    mutate(unit_code = row_number())
+
+  fao_production <- fao_production %>%
+    left_join(fao_unit_code) %>%
+    select(area_code:item_code, unit_code, year, value)
+
+  dbWriteTable(con, "fao_production_matrix", fao_production, overwrite = T)
+  dbWriteTable(con, "fao_production_matrix_unit_code", fao_unit_code, overwrite = T)
+
+  rm(fao_production, fao_unit_code)
   gc()
 }
 
-dbDisconnect(con, shutdown = T)
-
 # Read codes ----
-
-con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
 fao_reporters <- tbl(con, "agriculture_fao_trade_raw") %>%
   distinct(reporter_country_code) %>%
@@ -128,19 +225,11 @@ fao_reporters <- tbl(con, "agriculture_fao_trade_raw") %>%
 
 if (!"agriculture_fao_country_correspondence" %in% dbListTables(con)) {
   fao_country_correspondence <- read_csv("inp/faostat_country_correspondence.csv") %>%
-    clean_names() %>%
-    select(country_code, iso3_code)
+    clean_names()
 
-  dbWriteTable(con, "agriculture_fao_country_correspondence", fao_country_correspondence)
+  dbWriteTable(con, "agriculture_fao_country_correspondence",
+               fao_country_correspondence, overwrite = T)
 }
-
-# HERE I USE THE SITC 2 CODE EQUIVALENT 04211 TO HS 100610 BECAUSE HS92 STARTS IN 1988
-
-rice_paddy <- product_correlation %>%
-  select(sitc2, hs92) %>%
-  filter(hs92 == "100610") %>%
-  select(sitc2) %>%
-  pull()
 
 if (!"agriculture_fao_fcl_to_itpde" %in% dbListTables(con)) {
   fcl_to_itpde <- read_csv(csv_fcl_id) %>%
@@ -219,6 +308,7 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
       ## Convert country codes ----
 
       fao_country_correspondence <- tbl(con, "agriculture_fao_country_correspondence") %>%
+        select(country_code, iso3_code) %>%
         collect()
 
       d <- d %>%
@@ -347,10 +437,33 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
       ## Tidy units ----
 
       d <- d %>%
+        left_join(
+          tbl(con, "agriculture_gdp_unstats") %>%
+            filter(indicator_name == "Gross Domestic Product (GDP)") %>%
+            mutate(
+              constant = gdp_usd / gdp_local_currency,
+              year = as.integer(year),
+              country = toupper(ifelse(
+                country == "U.R. of Tanzania: Mainland" , "Tanzania - Mainland", country
+              ))
+            ) %>%
+            filter(year %in% 1988:2020) %>%
+            select(year, country_id, constant) %>%
+            left_join(
+              tbl(con, "agriculture_fao_country_correspondence") %>%
+                select(country_id = m49_code, producer_iso3 = iso3_code) %>%
+                mutate(country_id = as.integer(country_id))
+            ) %>%
+            select(year, producer_iso3, constant) %>%
+            collect()
+        ) %>%
         mutate(
-          production_int_usd = 1000 * x1000_int,
-          production_slc = 1000 * x1000_slc,
-          production_usd = 1000 * x1000_us
+          # production_int_usd = 1000 * x1000_int,
+          production_slc = 1000 * x1000_slc
+          # production_usd = 1000 * x1000_us
+        ) %>%
+        mutate(
+          production_usd = production_slc * constant
         ) %>%
         select(-starts_with("x"))
 
@@ -374,7 +487,7 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
       d <- d %>%
         rename(exporter_iso3 = producer_iso3) %>%
         mutate(importer_iso3 = exporter_iso3) %>%
-        select(year, exporter_iso3, importer_iso3, industry_id, production_int_usd) %>%
+        select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
         full_join(
           tbl(con, "agriculture_fao_trade_tidy") %>%
             filter(year == y) %>%
@@ -382,7 +495,7 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
             summarise(total_exports = sum(trade, na.rm = T)) %>%
             collect()
         ) %>%
-        mutate(trade = production_int_usd - total_exports) %>%
+        mutate(trade = production_usd - total_exports) %>%
         filter(trade >= 0) %>%
         select(year, exporter_iso3, importer_iso3, industry_id, trade)
 
