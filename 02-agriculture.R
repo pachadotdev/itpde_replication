@@ -80,7 +80,7 @@ con <- dbConnect(
   password = Sys.getenv("LOCAL_SQL_PWD")
 )
 
-if (!"gdp_unstats" %in% dbListTables(con)) {
+if (!"unstats_gdp" %in% dbListTables(con)) {
   gdp_local <- read_excel(xlsx_gdp_local, skip = 2) %>%
     pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_local_currency") %>%
     clean_names()
@@ -96,7 +96,7 @@ if (!"gdp_unstats" %in% dbListTables(con)) {
     select(year, country_id, country, indicator_name, currency, gdp_local_currency, gdp_usd) %>%
     mutate(year = as.integer(year))
 
-  dbWriteTable(con, "gdp_unstats", gdp_usd, overwrite = T)
+  dbWriteTable(con, "unstats_gdp", gdp_usd, overwrite = T)
 
   rm(gdp_local, gdp_usd)
 }
@@ -218,26 +218,27 @@ if (!"fao_production_matrix" %in% dbListTables(con)) {
 
 # Read codes ----
 
-fao_reporters <- tbl(con, "agriculture_fao_trade_raw") %>%
+fao_reporters <- tbl(con, "fao_trade_matrix") %>%
   distinct(reporter_country_code) %>%
   arrange() %>%
   pull()
 
-if (!"agriculture_fao_country_correspondence" %in% dbListTables(con)) {
+if (!"fao_country_correspondence" %in% dbListTables(con)) {
   fao_country_correspondence <- read_csv("inp/faostat_country_correspondence.csv") %>%
     clean_names()
 
-  dbWriteTable(con, "agriculture_fao_country_correspondence",
-               fao_country_correspondence, overwrite = T)
+  dbWriteTable(con, "fao_country_correspondence", fao_country_correspondence, overwrite = T)
+
+  rm(fao_country_correspondence)
 }
 
-if (!"agriculture_fao_fcl_to_itpde" %in% dbListTables(con)) {
+if (!"fao_fcl_to_itpde" %in% dbListTables(con)) {
   fcl_to_itpde <- read_csv(csv_fcl_id) %>%
     clean_names() %>%
     select(industry_id = itpd_id, item_code = fcl_item_code) %>%
     mutate_if(is.double, as.integer)
 
-  dbWriteTable(con, "agriculture_fao_fcl_to_itpde", fcl_to_itpde)
+  dbWriteTable(con, "fao_fcl_to_itpde", fcl_to_itpde)
 }
 
 if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
@@ -249,17 +250,11 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
     1986:2020,
     function(y, add_comtrade = FALSE) {
       message(y)
-      con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
       ## Convert wide to long and tidy units ----
 
-      d <- tbl(con, "agriculture_fao_trade_raw") %>%
-        select(reporter_country_code, partner_country_code, item_code,
-               element_code, unit_code, z = !!sym(paste0("y", y))) %>%
+      d <- tbl(con, "fao_trade_matrix") %>%
         collect() %>%
-
-        pivot_longer(z, names_to = "year", values_to = "value") %>%
-        mutate(year = y) %>%
         drop_na(value) %>%
 
         mutate(
@@ -273,41 +268,34 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
         ) %>%
 
         left_join(
-          tbl(con, "agriculture_fao_element_code_raw") %>%
+          tbl(con, "fao_trade_matrix_element_code") %>%
             collect()
         ) %>%
         select(-element_code) %>%
+
         left_join(
-          tbl(con, "agriculture_fao_unit_code_raw") %>%
-            collect()
+          tbl(con, "fao_trade_matrix_unit_code") %>%
+            collect() %>%
+            mutate(unit = gsub("1000 ", "", unit)) # remove the 1000 bc we re-scaled before
         ) %>%
         mutate(element = paste(element, unit)) %>%
         select(-unit, -unit_code) %>%
+
         pivot_wider(names_from = "element", values_from = "value") %>%
         clean_names() %>%
+
         rename(
-          import_value_usd = import_value_1000_us,
-          export_value_usd = export_value_1000_us
+          import_value_usd = import_value_us,
+          export_value_usd = export_value_us
         )
 
       d <- d %>%
-        mutate(
-          import_quantity_head = case_when(
-            is.na(import_quantity_head) ~ import_quantity_1000_head,
-            !is.na(import_quantity_head) ~ import_quantity_head
-          ),
-          export_quantity_head = case_when(
-            is.na(export_quantity_head) ~ export_quantity_1000_head,
-            !is.na(export_quantity_head) ~ export_quantity_head
-          )
-        ) %>%
-        select(-export_quantity_1000_head, -import_quantity_1000_head) %>%
         select(reporter_country_code, partner_country_code, item_code, year,
                starts_with("export"), starts_with("import"))
 
       ## Convert country codes ----
 
-      fao_country_correspondence <- tbl(con, "agriculture_fao_country_correspondence") %>%
+      fao_country_correspondence <- tbl(con, "fao_country_correspondence") %>%
         select(country_code, iso3_code) %>%
         collect()
 
@@ -328,7 +316,7 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
 
       d <- d %>%
         inner_join(
-          tbl(con, "agriculture_fao_fcl_to_itpde") %>%
+          tbl(con, "fao_fcl_to_itpde") %>%
             collect(),
           by = "item_code"
         ) %>%
@@ -375,26 +363,26 @@ if (!"agriculture_fao_trade_tidy" %in% dbListTables(con)) {
 
       rm(d2)
 
-      if (!"export_quantity_no" %in% colnames(d)) {
-        d$export_quantity_no <- 0
-      }
-
-      if (!"import_quantity_no" %in% colnames(d)) {
-        d$import_quantity_no <- 0
-      }
-
-      d <- d %>%
-        rename(
-          export_quantity_no_unit = export_quantity_no,
-          import_quantity_no_unit = import_quantity_no
-        )
+      # if (!"export_quantity_no" %in% colnames(d)) {
+      #   d$export_quantity_no <- 0
+      # }
+      #
+      # if (!"import_quantity_no" %in% colnames(d)) {
+      #   d$import_quantity_no <- 0
+      # }
+      #
+      # d <- d %>%
+      #   rename(
+      #     export_quantity_no_unit = export_quantity_no,
+      #     import_quantity_no_unit = import_quantity_no
+      #   )
 
       d <- d[colnames(d) %in% c("year", "exporter_iso3", "importer_iso3",
                                 "industry_id", "trade", "flag_mirror",
                                 "flag_zero", "flag_flow")]
 
-      dbWriteTable(con, "agriculture_fao_trade_tidy", d, append = T, overwrite = F)
-      dbDisconnect(con, shutdown = T)
+      dbWriteTable(con, "fao_trade_matrix_tidy", d, append = T, overwrite = F)
+      rm(d)
       gc()
 
       return(TRUE)
