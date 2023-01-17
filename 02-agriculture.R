@@ -6,6 +6,7 @@ library(tidyr)
 library(purrr)
 library(RPostgres)
 library(readxl)
+library(stringr)
 
 # Download trade data ----
 
@@ -54,23 +55,7 @@ if (!file.exists(csv_fcl_id)) {
 # (inp/faostats_country_correspondence.png)
 # the file is inp/faostat_country_correspondence.csv
 
-# Download GDPs to convert currencies ----
-
-url_gdp_local <- "https://unstats.un.org/unsd/amaapi/api/file/1"
-url_gdp_usd <- "https://unstats.un.org/unsd/amaapi/api/file/2"
-
-xlsx_gdp_local <- "inp/unstats_gdp_local_current_prices.xlsx"
-xlsx_gdp_usd <- "inp/unstats_gdp_usd_current_prices.xlsx"
-
-if (!file.exists(xlsx_gdp_local)) {
-  download.file(url_gdp_local, xlsx_gdp_local)
-}
-
-if (!file.exists(xlsx_gdp_usd)) {
-  download.file(url_gdp_usd, xlsx_gdp_usd)
-}
-
-# Import GDP data ----
+# Import raw trade data ----
 
 con <- dbConnect(
   Postgres(),
@@ -79,29 +64,6 @@ con <- dbConnect(
   user = Sys.getenv("LOCAL_SQL_USR"),
   password = Sys.getenv("LOCAL_SQL_PWD")
 )
-
-if (!"unstats_gdp" %in% dbListTables(con)) {
-  gdp_local <- read_excel(xlsx_gdp_local, skip = 2) %>%
-    pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_local_currency") %>%
-    clean_names()
-
-  gdp_usd <- read_excel(xlsx_gdp_usd, skip = 2) %>%
-    pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_usd") %>%
-    clean_names()
-
-  gdp_usd <- gdp_usd %>%
-    full_join(gdp_local)
-
-  gdp_usd <- gdp_usd %>%
-    select(year, country_id, country, indicator_name, currency, gdp_local_currency, gdp_usd) %>%
-    mutate(year = as.integer(year))
-
-  dbWriteTable(con, "unstats_gdp", gdp_usd, overwrite = T)
-
-  rm(gdp_local, gdp_usd)
-}
-
-# Import raw trade data ----
 
 if (!"fao_trade_matrix" %in% dbListTables(con)) {
   fao_trade <- read_csv("inp/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
@@ -193,7 +155,8 @@ if (!"fao_production_matrix" %in% dbListTables(con)) {
     clean_names()
 
   fao_production <- fao_production %>%
-    select(area_code, item_code, unit, y1986:y2020)
+    select(area_code, item_code, element, unit, y1986:y2020) %>%
+    mutate(unit = str_replace_all(element, "Gross Production Value \\(|\\)", ""))
 
   fao_production <- fao_production %>%
     pivot_longer(y1986:y2020, names_to = "year", values_to = "value") %>%
@@ -346,10 +309,10 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
             import_value_usd == 0 ~ export_value_usd,
             TRUE ~ import_value_usd
           ),
-          trade_flag = case_when(
-            is.na(trade) ~ "trade = NA, converted to 0",
-            import_value_usd == 0 ~ "trade = exports",
-            import_value_usd > 0 ~ "trade = imports"
+          trade_flag_zero = case_when(
+            is.na(trade) ~ 1L, # 1 means trade = NA
+            import_value_usd == 0 ~ 2L, # 2 means trade = exports
+            import_value_usd > 0 ~ 3L # 3 means trade = imports
           ),
           trade = case_when(
             is.na(trade) ~ 0,
@@ -410,7 +373,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         left_join(
           tbl(con, "fao_production_matrix_unit_code") %>%
             collect() %>%
-            mutate(unit = gsub("1000 ", "", unit)) # remove the 1000 bc we re-scaled before
+            mutate(unit = gsub("thousand ", "", unit)) # remove the 1000 bc we re-scaled before
         ) %>%
         select(-unit_code) %>%
         pivot_wider(names_from = "unit", values_from = "value") %>%
@@ -423,7 +386,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         ) %>%
 
         # here we select values in standard local currency
-        select(year, producer_iso3, item_code, production_slc = slc)
+        select(year, producer_iso3, item_code, production_slc = current_slc)
 
       ## Tidy units ----
 
@@ -450,9 +413,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
             collect() %>%
             filter(!is.na(producer_iso3))
         ) %>%
-        mutate(
-          production_usd = production_slc / constant
-        )
+        mutate(production_usd = production_slc / constant)
 
       ## Convert FCL to ITPD-E, filter and aggregate ----
 
@@ -483,39 +444,42 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
             collect()
         ) %>%
         mutate(
-          # production_flag = case_when(
-          #   is.na(production_usd) ~ "production is NA, converted to 0"
-          # ),
+          trade_flag_zero = case_when(
+            is.na(production_usd) ~ 4L # 4 means production = NA
+          ),
           production_usd = case_when(
             is.na(production_usd) ~ 0,
             TRUE ~ production_usd
           ),
 
-          trade_flag = case_when(
-            is.na(trade) ~ "trade = NA, converted to 0"
+          trade_flag_zero = case_when(
+            trade_flag_zero == 4L & is.na(total_exports) ~ 5L, # 5 means exports = NA and production = NA
+            trade_flag_zero == 4L & !is.na(total_exports) ~ 6L, # 6 means exports = NA and production != NA"
+            TRUE ~ trade_flag_zero
           ),
-          trade = case_when(
-            is.na(trade) ~ 0,
-            TRUE ~ trade
+          total_exports = case_when(
+            is.na(total_exports) ~ 0,
+            TRUE ~ total_exports
           ),
 
           trade = production_usd - total_exports,
-          trade_flag = case_when(
-            trade < 0 ~ "production - trade < 0, converted to 0",
-            TRUE ~ trade_flag
+          trade_flag_zero = case_when(
+            trade < 0 ~ 7L, # 7 means production - trade < 0
+            TRUE ~ trade_flag_zero
           ),
           trade = case_when(
             trade < 0 ~ 0,
             TRUE ~ trade
           )
         ) %>%
-        select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag)
+        select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_zero)
 
-      dbWriteTable(con, "agriculture_fao_trade_tidy", d, append = T, overwrite = F)
-      dbDisconnect(con, shutdown = T)
+      dbWriteTable(con, "fao_trade_tidy", d, append = T, overwrite = F)
       gc()
 
       return(TRUE)
     }
   )
 }
+
+dbDisconnect(con)
