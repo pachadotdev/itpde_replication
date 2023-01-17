@@ -309,7 +309,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
             import_value_usd == 0 ~ export_value_usd,
             TRUE ~ import_value_usd
           ),
-          trade_flag_zero = case_when(
+          trade_flag_code = case_when(
             is.na(trade) ~ 1L, # 1 means trade = NA
             import_value_usd == 0 ~ 2L, # 2 means trade = exports
             import_value_usd > 0 ~ 3L # 3 means trade = imports
@@ -356,130 +356,107 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
   message("==== PRODUCTION ====")
 
-  fao_production <- map(
-    1986:2020,
-    function(y) {
-      message(y)
+  fao_production <- tbl(con, "fao_production_matrix") %>%
+    select(area_code, item_code, unit_code, year, value) %>%
+    # filter(year == y) %>%
+    filter(unit_code == 4) %>%
+    mutate(value = value * 1000) %>%
+    collect() %>%
+    drop_na(value) %>%
 
-      ## Convert wide to long and country codes ----
-
-      d <- tbl(con, "fao_production_matrix") %>%
-        select(area_code, item_code, unit_code, year, value) %>%
-        filter(year == y) %>%
-        mutate(value = value * 1000) %>%
+    left_join(
+      tbl(con, "fao_production_matrix_unit_code") %>%
         collect() %>%
-        drop_na(value) %>%
+        mutate(unit = gsub("thousand ", "", unit)) # remove the 1000 bc we re-scaled before
+    ) %>%
+    select(-unit_code) %>%
+    pivot_wider(names_from = "unit", values_from = "value") %>%
+    clean_names() %>%
 
-        left_join(
-          tbl(con, "fao_production_matrix_unit_code") %>%
-            collect() %>%
-            mutate(unit = gsub("thousand ", "", unit)) # remove the 1000 bc we re-scaled before
-        ) %>%
-        select(-unit_code) %>%
-        pivot_wider(names_from = "unit", values_from = "value") %>%
-        clean_names() %>%
-
-        left_join(
-          tbl(con, "fao_country_correspondence") %>%
-            select(area_code = country_code, producer_iso3 = iso3_code) %>%
-            collect()
-        ) %>%
-
-        # here we select values in standard local currency
-        select(year, producer_iso3, item_code, production_slc = current_slc)
-
-      ## Tidy units ----
-
-      # here I convert local currency by using GDP ratios
-      d <- d %>%
-        inner_join(
-          tbl(con, "unstats_gdp") %>%
-            filter(indicator_name == "Gross Domestic Product (GDP)") %>%
-            mutate(
-              constant = gdp_usd / gdp_local_currency,
-              year = as.integer(year),
-              country = toupper(ifelse(
-                country == "U.R. of Tanzania: Mainland" , "Tanzania - Mainland", country
-              ))
-            ) %>%
-            filter(year == y) %>%
-            select(year, country_id, constant) %>%
-            inner_join(
-              tbl(con, "fao_country_correspondence") %>%
-                select(country_id = m49_code, producer_iso3 = iso3_code) %>%
-                mutate(country_id = as.integer(country_id))
-            ) %>%
-            select(year, producer_iso3, constant) %>%
-            collect() %>%
-            filter(!is.na(producer_iso3))
-        ) %>%
-        mutate(production_usd = production_slc / constant)
-
-      ## Convert FCL to ITPD-E, filter and aggregate ----
-
-      # Construct domestic trade. Domestic trade is calculated as the difference between the
-      # (gross) value of total production and total exports. Total exports are constructed as
-      # the sum of bilateral trade for each exporting country. If we obtain a negative domestic
-      # trade value, we do not include this observation in the ITPD-E-R02.
-
-      fcl_to_itpde <- tbl(con, "fao_fcl_to_itpde") %>%
+    left_join(
+      tbl(con, "fao_country_correspondence") %>%
+        select(area_code = country_code, producer_iso3 = iso3_code) %>%
         collect()
+    ) %>%
 
-      d <- d %>%
-        inner_join(fcl_to_itpde, by = "item_code") %>%
-        select(-item_code) %>%
-        group_by(year, producer_iso3, industry_id) %>%
-        summarise_if(is.double, sum, na.rm = T) %>%
-        ungroup()
+    # here we select values in standard local currency
+    select(year, producer_iso3, item_code, production_usd = current_us)
 
-      d <- d %>%
-        rename(exporter_iso3 = producer_iso3) %>%
-        mutate(importer_iso3 = exporter_iso3) %>%
-        select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
-        full_join(
-          tbl(con, "fao_trade_matrix_tidy") %>%
-            filter(year == y) %>%
-            group_by(year, exporter_iso3, industry_id) %>%
-            summarise(total_exports = sum(trade, na.rm = T)) %>%
-            collect()
-        ) %>%
-        mutate(
-          trade_flag_zero = case_when(
-            is.na(production_usd) ~ 4L # 4 means production = NA
-          ),
-          production_usd = case_when(
-            is.na(production_usd) ~ 0,
-            TRUE ~ production_usd
-          ),
+  ## Convert FCL to ITPD-E, filter and aggregate ----
 
-          trade_flag_zero = case_when(
-            trade_flag_zero == 4L & is.na(total_exports) ~ 5L, # 5 means exports = NA and production = NA
-            trade_flag_zero == 4L & !is.na(total_exports) ~ 6L, # 6 means exports = NA and production != NA"
-            TRUE ~ trade_flag_zero
-          ),
-          total_exports = case_when(
-            is.na(total_exports) ~ 0,
-            TRUE ~ total_exports
-          ),
+  # Construct domestic trade. Domestic trade is calculated as the difference between the
+  # (gross) value of total production and total exports. Total exports are constructed as
+  # the sum of bilateral trade for each exporting country. If we obtain a negative domestic
+  # trade value, we do not include this observation in the ITPD-E-R02.
 
-          trade = production_usd - total_exports,
-          trade_flag_zero = case_when(
-            trade < 0 ~ 7L, # 7 means production - trade < 0
-            TRUE ~ trade_flag_zero
-          ),
-          trade = case_when(
-            trade < 0 ~ 0,
-            TRUE ~ trade
-          )
-        ) %>%
-        select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_zero)
+  fcl_to_itpde <- tbl(con, "fao_fcl_to_itpde") %>%
+    collect()
 
-      dbWriteTable(con, "fao_trade_tidy", d, append = T, overwrite = F)
-      gc()
+  fao_production <- fao_production %>%
+    inner_join(fcl_to_itpde, by = "item_code") %>%
+    select(-item_code) %>%
+    group_by(year, producer_iso3, industry_id) %>%
+    summarise_if(is.double, sum, na.rm = T) %>%
+    ungroup()
 
-      return(TRUE)
-    }
+  fao_production <- fao_production %>%
+    rename(exporter_iso3 = producer_iso3) %>%
+    mutate(importer_iso3 = exporter_iso3) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
+    full_join(
+      tbl(con, "fao_trade_matrix_tidy") %>%
+        filter(year == y) %>%
+        group_by(year, exporter_iso3, industry_id) %>%
+        summarise(total_exports = sum(trade, na.rm = T)) %>%
+        collect()
+    ) %>%
+    mutate(
+      trade_flag_code = case_when(
+        is.na(production_usd) ~ 4L # 4 means production = NA
+      ),
+      production_usd = case_when(
+        is.na(production_usd) ~ 0,
+        TRUE ~ production_usd
+      ),
+
+      trade_flag_code = case_when(
+        trade_flag_code == 4L & is.na(total_exports) ~ 5L, # 5 means exports = NA and production = NA
+        trade_flag_code == 4L & !is.na(total_exports) ~ 6L, # 6 means exports = NA and production != NA"
+        TRUE ~ trade_flag_code
+      ),
+      total_exports = case_when(
+        is.na(total_exports) ~ 0,
+        TRUE ~ total_exports
+      ),
+
+      trade = production_usd - total_exports,
+      trade_flag_code = case_when(
+        trade < 0 ~ 7L, # 7 means production - trade < 0
+        TRUE ~ trade_flag_code
+      ),
+      trade = case_when(
+        trade < 0 ~ 0,
+        TRUE ~ trade
+      )
+    ) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
+
+  # add table with flags
+  fao_trade_tidy_flag_code <- tibble(
+    trade_flag_code = 1L:7L,
+    trade_flag = c(
+      "trade = NA",
+      "trade = exports",
+      "trade = imports",
+      "production = NA",
+      "means exports = NA and production = NA",
+      "exports = NA and production != NA",
+      "production - trade < 0")
   )
+
+  dbWriteTable(con, "fao_trade_tidy", fao_production, append = T, overwrite = F)
+  dbWriteTable(con, "fao_trade_tidy_flag_code", fao_trade_tidy_flag_code, append = F, overwrite = T)
+  gc()
 }
 
 dbDisconnect(con)
