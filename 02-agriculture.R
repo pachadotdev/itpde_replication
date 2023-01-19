@@ -4,9 +4,8 @@ library(janitor)
 library(dplyr)
 library(tidyr)
 library(purrr)
-library(RPostgres)
-library(readxl)
 library(stringr)
+library(RPostgres)
 
 # Download trade data ----
 
@@ -65,7 +64,7 @@ con <- dbConnect(
   password = Sys.getenv("LOCAL_SQL_PWD")
 )
 
-if (!"fao_trade_matrix" %in% dbListTables(con)) {
+if (!"fao_trade" %in% dbListTables(con)) {
   fao_trade <- read_csv("inp/faostat_trade_matrix/Trade_DetailedTradeMatrix_E_All_Data_NOFLAG.csv") %>%
     clean_names()
 
@@ -122,8 +121,8 @@ if (!"fao_trade_matrix" %in% dbListTables(con)) {
 
   gc()
 
-  dbWriteTable(con, "fao_trade_matrix_element_code", fao_element_code, overwrite = T)
-  dbWriteTable(con, "fao_trade_matrix_unit_code", fao_unit_code, overwrite = T)
+  dbWriteTable(con, "fao_trade_element_code", fao_element_code, overwrite = T)
+  dbWriteTable(con, "fao_trade_unit_code", fao_unit_code, overwrite = T)
 
   fao_trade <- fao_trade %>%
     ungroup() %>%
@@ -140,7 +139,7 @@ if (!"fao_trade_matrix" %in% dbListTables(con)) {
     seq_along(fao_trade),
     function(x) {
       message(sprintf("Writing fragment %s of %s", x, length(fao_trade)))
-      dbWriteTable(con, "fao_trade_matrix", fao_trade[[x]], append = TRUE, overwrite = FALSE)
+      dbWriteTable(con, "fao_trade", fao_trade[[x]], append = TRUE, overwrite = FALSE)
     }
   )
 
@@ -181,7 +180,7 @@ if (!"fao_production_matrix" %in% dbListTables(con)) {
 
 # Read codes ----
 
-fao_reporters <- tbl(con, "fao_trade_matrix") %>%
+fao_reporters <- tbl(con, "fao_trade") %>%
   distinct(reporter_country_code) %>%
   arrange() %>%
   pull()
@@ -195,16 +194,16 @@ if (!"fao_country_correspondence" %in% dbListTables(con)) {
   rm(fao_country_correspondence)
 }
 
-if (!"fao_fcl_to_itpde" %in% dbListTables(con)) {
+if (!"usitc_fao_to_itpde" %in% dbListTables(con)) {
   fcl_to_itpde <- read_csv(csv_fcl_id) %>%
     clean_names() %>%
     select(industry_id = itpd_id, item_code = fcl_item_code) %>%
     mutate_if(is.double, as.integer)
 
-  dbWriteTable(con, "fao_fcl_to_itpde", fcl_to_itpde)
+  dbWriteTable(con, "usitc_fao_to_itpde", fcl_to_itpde)
 }
 
-if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
+if (!"fao_trade_tidy" %in% dbListTables(con)) {
   # Tidy trade data ----
 
   message("==== TRADE ====")
@@ -216,7 +215,7 @@ if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
 
       ## Convert wide to long and tidy units ----
 
-      d <- tbl(con, "fao_trade_matrix") %>%
+      d <- tbl(con, "fao_trade") %>%
         filter(year == y) %>%
         collect() %>%
         drop_na(value) %>%
@@ -232,13 +231,13 @@ if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
         ) %>%
 
         left_join(
-          tbl(con, "fao_trade_matrix_element_code") %>%
+          tbl(con, "fao_trade_element_code") %>%
             collect()
         ) %>%
         select(-element_code) %>%
 
         left_join(
-          tbl(con, "fao_trade_matrix_unit_code") %>%
+          tbl(con, "fao_trade_unit_code") %>%
             collect() %>%
             mutate(unit = gsub("1000 ", "", unit)) # remove the 1000 bc we re-scaled before
         ) %>%
@@ -280,7 +279,7 @@ if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
 
       d <- d %>%
         inner_join(
-          tbl(con, "fao_fcl_to_itpde") %>%
+          tbl(con, "usitc_fao_to_itpde") %>%
             collect(),
           by = "item_code"
         ) %>%
@@ -345,7 +344,7 @@ if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
       #                           "industry_id", "trade", "flag_mirror",
       #                           "flag_zero", "flag_flow")]
 
-      dbWriteTable(con, "fao_trade_matrix_tidy", d, append = T, overwrite = F)
+      dbWriteTable(con, "fao_trade_tidy", d, append = T, overwrite = F)
       rm(d)
       gc()
 
@@ -391,7 +390,7 @@ if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
 
   fao_production <- fao_production %>%
     inner_join(
-      tbl(con, "fao_fcl_to_itpde") %>%
+      tbl(con, "usitc_fao_to_itpde") %>%
         collect(), by = "item_code"
     ) %>%
     select(-item_code) %>%
@@ -404,7 +403,7 @@ if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
     mutate(importer_iso3 = exporter_iso3) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
     inner_join(
-      tbl(con, "fao_trade_matrix_tidy") %>%
+      tbl(con, "fao_trade_tidy") %>%
         # remove domestic trade before substracting from production
         filter(exporter_iso3 != importer_iso3) %>%
         group_by(year, exporter_iso3, industry_id) %>%
@@ -455,10 +454,10 @@ if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
       "production - trade < 0")
   )
 
-  dbSendQuery(con, "delete from fao_trade_matrix_tidy where exporter_iso3 = importer_iso3")
+  dbSendQuery(con, "delete from fao_trade_tidy where exporter_iso3 = importer_iso3")
 
-  dbWriteTable(con, "fao_trade_matrix_tidy", fao_production, append = T, overwrite = F)
-  dbWriteTable(con, "fao_trade_matrix_tidy_flag_code", fao_trade_tidy_flag_code, append = F, overwrite = T)
+  dbWriteTable(con, "fao_trade_tidy", fao_production, append = T, overwrite = F)
+  dbWriteTable(con, "fao_trade_tidy_flag_code", fao_trade_tidy_flag_code, append = F, overwrite = T)
   gc()
 }
 
