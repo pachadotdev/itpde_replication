@@ -204,7 +204,7 @@ if (!"fao_fcl_to_itpde" %in% dbListTables(con)) {
   dbWriteTable(con, "fao_fcl_to_itpde", fcl_to_itpde)
 }
 
-if (!"fao_trade_tidy" %in% dbListTables(con)) {
+if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
   # Tidy trade data ----
 
   message("==== TRADE ====")
@@ -217,6 +217,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       ## Convert wide to long and tidy units ----
 
       d <- tbl(con, "fao_trade_matrix") %>%
+        filter(year == y) %>%
         collect() %>%
         drop_na(value) %>%
 
@@ -358,7 +359,6 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
   fao_production <- tbl(con, "fao_production_matrix") %>%
     select(area_code, item_code, unit_code, year, value) %>%
-    # filter(year == y) %>%
     filter(unit_code == 4) %>%
     mutate(value = value * 1000) %>%
     collect() %>%
@@ -389,11 +389,11 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
   # the sum of bilateral trade for each exporting country. If we obtain a negative domestic
   # trade value, we do not include this observation in the ITPD-E-R02.
 
-  fcl_to_itpde <- tbl(con, "fao_fcl_to_itpde") %>%
-    collect()
-
   fao_production <- fao_production %>%
-    inner_join(fcl_to_itpde, by = "item_code") %>%
+    inner_join(
+      tbl(con, "fao_fcl_to_itpde") %>%
+        collect(), by = "item_code"
+    ) %>%
     select(-item_code) %>%
     group_by(year, producer_iso3, industry_id) %>%
     summarise_if(is.double, sum, na.rm = T) %>%
@@ -403,9 +403,8 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
     rename(exporter_iso3 = producer_iso3) %>%
     mutate(importer_iso3 = exporter_iso3) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
-    full_join(
+    inner_join(
       tbl(con, "fao_trade_matrix_tidy") %>%
-        filter(year == y) %>%
         group_by(year, exporter_iso3, industry_id) %>%
         summarise(total_exports = sum(trade, na.rm = T)) %>%
         collect()
@@ -449,13 +448,15 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       "trade = exports",
       "trade = imports",
       "production = NA",
-      "means exports = NA and production = NA",
+      "exports = NA and production = NA",
       "exports = NA and production != NA",
       "production - trade < 0")
   )
 
-  dbWriteTable(con, "fao_trade_tidy", fao_production, append = T, overwrite = F)
-  dbWriteTable(con, "fao_trade_tidy_flag_code", fao_trade_tidy_flag_code, append = F, overwrite = T)
+  dbSendQuery(con, "delete from fao_trade_matrix_tidy where exporter_iso3 = importer_iso3")
+
+  dbWriteTable(con, "fao_trade_matrix_tidy", fao_production, append = T, overwrite = F)
+  dbWriteTable(con, "fao_trade_matrix_tidy_flag_code", fao_trade_tidy_flag_code, append = F, overwrite = T)
   gc()
 }
 
