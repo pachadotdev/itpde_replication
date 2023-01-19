@@ -405,6 +405,8 @@ if (!"fao_trade_matrix_tidy" %in% dbListTables(con)) {
     select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
     inner_join(
       tbl(con, "fao_trade_matrix_tidy") %>%
+        # remove domestic trade before substracting from production
+        filter(exporter_iso3 != importer_iso3) %>%
         group_by(year, exporter_iso3, industry_id) %>%
         summarise(total_exports = sum(trade, na.rm = T)) %>%
         collect()
