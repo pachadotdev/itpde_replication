@@ -468,38 +468,54 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   d_prod <- d_prod %>%
     arrange(country_iso3, year)
 
-  ### Add flags ----
-
   d_prod <- d_prod %>%
     rename(exporter_iso3 = country_iso3) %>%
     mutate(importer_iso3 = exporter_iso3) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, production_int_usd = production_usd) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
     full_join(
       tbl(con, "uncomtrade_trade") %>%
+        filter(reporter_iso3 != partner_iso3) %>%
         select(year, exporter_iso3 = partner_iso3, industry_id, import_value_usd) %>%
         group_by(year, exporter_iso3, industry_id) %>%
         summarise(total_exports = sum(import_value_usd, na.rm = T)) %>%
         collect()
     ) %>%
-    mutate(trade = production_int_usd - total_exports) %>%
-    filter(trade >= 0) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, trade)
-
-  d_prod <- d_prod %>%
     mutate(
-      flag_mirror = 0L,
-      flag_zero = case_when(
-        trade > 0 ~ "p",
-        trade == 0 ~ "r"
+      trade_flag_code = case_when(
+        is.na(production_usd) ~ 4L # 4 means production = NA
       ),
-      flag_flow = "d"
-    )
+      production_usd = case_when(
+        is.na(production_usd) ~ 0,
+        TRUE ~ production_usd
+      ),
+
+      trade_flag_code = case_when(
+        trade_flag_code == 4L & is.na(total_exports) ~ 5L, # 5 means exports = NA and production = NA
+        trade_flag_code == 4L & !is.na(total_exports) ~ 6L, # 6 means exports = NA and production != NA"
+        TRUE ~ trade_flag_code
+      ),
+      total_exports = case_when(
+        is.na(total_exports) ~ 0,
+        TRUE ~ total_exports
+      ),
+
+      trade = production_usd - total_exports,
+      trade_flag_code = case_when(
+        trade < 0 ~ 7L, # 7 means production - trade < 0
+        TRUE ~ trade_flag_code
+      ),
+      trade = case_when(
+        trade < 0 ~ 0,
+        TRUE ~ trade
+      )
+    ) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
 
   ## Trade data ----
 
   ### Get imports/exports ----
 
-  d_trade <- tbl(con, "fishing_forestry_comtrade_trade_raw") %>%
+  d_trade <- tbl(con, "uncomtrade_trade") %>%
     select(year, exporter_iso3 = partner_iso3, importer_iso3 = reporter_iso3,
            industry_id, import_value_usd, export_value_usd) %>%
     group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
@@ -512,24 +528,11 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   d_trade <- d_trade %>%
     arrange(exporter_iso3, year)
 
-  ### Add flags -----
+  # FORMALIZE THIS DIVISION LATER
+  d_trade$import_value_usd <- d_trade$import_value_usd / 1000000
+  d_trade$export_value_usd <- d_trade$export_value_usd / 1000000
 
-  d_trade <- d_trade %>%
-    mutate(
-      trade = case_when(
-        import_value_usd == 0 ~ export_value_usd,
-        TRUE ~ import_value_usd
-      ),
-      flag_mirror = case_when(
-        trade == import_value_usd ~ 0L,
-        TRUE ~ 1L
-      ),
-      flag_zero = case_when(
-        trade > 0 ~ "p",
-        trade == 0 ~ "r" # I still need to add "flag = u" later
-      ),
-      flag_flow = "i"
-    )
+  # TODO: FLAGS!
 
   ## Combine tables ----
 
