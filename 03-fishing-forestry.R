@@ -1,4 +1,5 @@
 library(readr)
+library(readxl)
 library(janitor)
 library(dplyr)
 library(tidyr)
@@ -56,6 +57,23 @@ txt_isic3 <- "inp/isic3.txt"
 
 if (!file.exists(txt_isic3)) {
   download.file(url_isic3, txt_isic3)
+}
+
+# Download GDPs to convert currencies ----
+# Import raw trade data ----
+
+url_gdp_local <- "https://unstats.un.org/unsd/amaapi/api/file/1"
+url_gdp_usd <- "https://unstats.un.org/unsd/amaapi/api/file/2"
+
+xlsx_gdp_local <- "inp/unstats_gdp_local_current_prices.xlsx"
+xlsx_gdp_usd <- "inp/unstats_gdp_usd_current_prices.xlsx"
+
+if (!file.exists(xlsx_gdp_local)) {
+  download.file(url_gdp_local, xlsx_gdp_local)
+}
+
+if (!file.exists(xlsx_gdp_usd)) {
+  download.file(url_gdp_usd, xlsx_gdp_usd)
 }
 
 # Read codes ----
@@ -120,9 +138,9 @@ con2 <- dbConnect(
   password = Sys.getenv("LOCAL_SQL_PWD")
 )
 
-if (!"uncomtrade_trade_raw" %in% dbListTables(con)) {
-  # this table is to avoid writing special zones that we won't need
-  if (!"usitc_country_names" %in% dbListTables(con)) {
+if (!"uncomtrade_trade" %in% dbListTables(con)) {
+  # this table is to avoid writing special country codes that we won't need
+  if (!"usitc_country_codes" %in% dbListTables(con)) {
     con3 <- usitcgravity_connect()
 
     country_names <- tbl(con3, "country_names") %>%
@@ -131,7 +149,7 @@ if (!"uncomtrade_trade_raw" %in% dbListTables(con)) {
 
     dbDisconnect(con3, shutdown = T)
 
-    dbWriteTable(con, "usitc_country_names", country_names, overwrite = T)
+    dbWriteTable(con, "usitc_country_codes", country_names, overwrite = T)
   }
 
   a02 <- tbl(con, "wb_isic3_to_hs92") %>%
@@ -186,7 +204,10 @@ if (!"uncomtrade_trade_raw" %in% dbListTables(con)) {
                  "commodity_code")
         ) %>%
         select(-commodity_code) %>%
-        mutate(industry_id = 27L) %>%
+        mutate(
+          industry_id = 27L,
+          year = y
+        ) %>%
         rename(
           export_value_usd = trade_value_usd_exp,
           import_value_usd = trade_value_usd_imp
@@ -229,7 +250,10 @@ if (!"uncomtrade_trade_raw" %in% dbListTables(con)) {
                  "commodity_code")
         ) %>%
         select(-commodity_code) %>%
-        mutate(industry_id = 28L) %>%
+        mutate(
+          industry_id = 28L,
+          year = y
+        ) %>%
         rename(
           export_value_usd = trade_value_usd_exp,
           import_value_usd = trade_value_usd_imp
@@ -258,13 +282,13 @@ if (!"uncomtrade_trade_raw" %in% dbListTables(con)) {
 
       d_imp <- d_imp %>%
         inner_join(
-          tbl(con, "usitc_country_names") %>%
+          tbl(con, "usitc_country_codes") %>%
             collect() %>%
             distinct() %>%
             rename(reporter_iso3 = country_iso3)
         ) %>%
         inner_join(
-          tbl(con, "usitc_country_names") %>%
+          tbl(con, "usitc_country_codes") %>%
             collect() %>%
             distinct() %>%
             rename(partner_iso3 = country_iso3)
@@ -272,18 +296,14 @@ if (!"uncomtrade_trade_raw" %in% dbListTables(con)) {
         group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
         summarise_if(is.numeric, sum, na.rm = T)
 
-      dbWriteTable(con, "fishing_forestry_trade", d_imp, append = T)
+      dbWriteTable(con, "uncomtrade_trade", d_imp, append = T)
     }
   )
 }
 
-# HASTA ACA OK DE MOMENTO
-
 # Import raw production data ----
 
-con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
-
-if (!"fishing_forestry_undata_production_raw" %in% dbListTables(con)) {
+if (!"undata_production" %in% dbListTables(con)) {
   d_prod <- read_delim(txt_production_isic4,
                        delim = "|",
                        escape_double = FALSE,
@@ -300,8 +320,8 @@ if (!"fishing_forestry_undata_production_raw" %in% dbListTables(con)) {
                           trim_ws = TRUE, skip = 25988) %>%
     clean_names()
 
-  unique(d_prod$sub_item)
-  unique(d_prod$value_footnotes)
+  # unique(d_prod$sub_item)
+  # unique(d_prod$value_footnotes)
 
   d_prod <- d_prod %>%
     mutate(
@@ -311,28 +331,18 @@ if (!"fishing_forestry_undata_production_raw" %in% dbListTables(con)) {
       value = as.double(value)
     )
 
-  dbWriteTable(con, "fishing_forestry_undata_production_raw", d_prod, append = T)
-  dbWriteTable(con, "fishing_forestry_undata_production_raw_footnotes", d_prod_footnotes, append = T)
-
-  dbDisconnect(con, shutdown = T)
+  dbWriteTable(con, "undata_production", d_prod, append = T)
+  dbWriteTable(con, "undata_production_footnotes", d_prod_footnotes, append = T)
 }
 
-# COMPLETE ----
+# Import country names ----
 
-con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
-
-if (!"fishing_forestry_country_iso3_codes" %in% dbListTables(con)) {
-  d_iso_codes <- open_dataset(
-    sources = paste0(dir_comtrade_data, "parquet/6/import"),
-    partitioning = schema(
-      year = int32(), reporter_iso = string())
-  )
-
-  d_iso_codes_2 <- map_df(
+if (!"uncomtrade_country_codes" %in% dbListTables(con)) {
+  d_iso_codes <- map_df(
     1988:2020,
     function(y) {
       message(y)
-      d_iso_codes %>%
+      tbl(con2, "hs_rev1992_tf_import_al_6") %>%
         filter(year == y) %>%
         select(reporter_iso, reporter_code, reporter) %>%
         distinct() %>%
@@ -340,58 +350,80 @@ if (!"fishing_forestry_country_iso3_codes" %in% dbListTables(con)) {
     }
   )
 
-  d_iso_codes_2 <- d_iso_codes_2 %>%
+  d_iso_codes <- d_iso_codes %>%
     distinct() %>%
     arrange(reporter_code) %>%
     select(country_iso3 = reporter_iso, country_id = reporter_code,
            country = reporter)
 
-  d_iso_codes_2 <- d_iso_codes_2 %>%
+  d_iso_codes <- d_iso_codes %>%
     mutate(
       country_iso3 = toupper(country_iso3),
       country = toupper(country)
     )
 
-  rm(d_iso_codes_2)
   gc()
 
-  dbWriteTable(con, "fishing_forestry_country_iso3_codes", d_iso_codes_2, overwrite = T)
-
-  dbDisconnect(con, shutdown = T)
+  dbWriteTable(con, "uncomtrade_country_codes", d_iso_codes, overwrite = T)
 }
+
+dbDisconnect(con2)
 
 # Tidy data (combine trade and production in same final table) ----
 
-con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
-
-if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
+if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   ## Tidy production -----
+
+  ### Copy GDP table to SQL with GDP ratios ----
+
+  if (!"unstats_gdp" %in% dbListTables(con)) {
+    gdp_local <- read_excel(xlsx_gdp_local, skip = 2) %>%
+      pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_local_currency") %>%
+      clean_names()
+
+    gdp_usd <- read_excel(xlsx_gdp_usd, skip = 2) %>%
+      pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_usd") %>%
+      clean_names()
+
+    gdp_usd <- gdp_usd %>%
+      full_join(gdp_local)
+
+    gdp_usd <- gdp_usd %>%
+      select(year, country_id, country, indicator_name, currency, gdp_local_currency, gdp_usd) %>%
+      mutate(
+        year = as.integer(year),
+        gdp_rate = gdp_usd / gdp_local_currency,
+      ) %>%
+      filter(indicator_name == "Gross Domestic Product (GDP)") %>%
+      select(-indicator_name)
+
+    dbWriteTable(con, "unstats_gdp", gdp_usd, overwrite = T)
+
+    rm(gdp_local, gdp_usd)
+  }
 
   ### Get raw production and convert all currencies to USD ----
 
-  d_prod <- tbl(con, "fishing_forestry_undata_production_raw") %>%
+  d_prod <- tbl(con, "undata_production") %>%
     filter(item == "Output, at basic prices") %>%
     select(year, country = country_or_area, sub_item, production_local_currency = value) %>%
     mutate(country = toupper(country)) %>%
     left_join(
-      tbl(con, "fishing_forestry_gdp_unstats") %>%
-        filter(indicator_name == "Gross Domestic Product (GDP)") %>%
+      tbl(con, "unstats_gdp") %>%
         mutate(
-          constant = gdp_usd / gdp_local_currency,
           year = as.integer(year),
           country = toupper(ifelse(
             country == "U.R. of Tanzania: Mainland" , "Tanzania - Mainland", country
           ))
         ) %>%
         filter(year %in% 1988:2020) %>%
-        select(year, country, country_id, constant)
+        select(year, country, country_id, gdp_rate)
     ) %>%
     left_join(
-      tbl(con, "fishing_forestry_country_iso3_codes")
+      tbl(con, "uncomtrade_country_codes")
     ) %>%
-    # select(year, country_iso3, production_local_currency, constant) %>%
-    mutate(production_usd = production_local_currency * constant) %>%
-    select(-constant, -production_local_currency) %>%
+    mutate(production_usd = production_local_currency * gdp_rate) %>%
+    select(-gdp_rate, -production_local_currency) %>%
     collect()
 
   ### Fix ISO-3 codes ----
@@ -443,7 +475,7 @@ if (!"fishing_forestry_comtrade_trade_tidy" %in% dbListTables(con)) {
     mutate(importer_iso3 = exporter_iso3) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, production_int_usd = production_usd) %>%
     full_join(
-      tbl(con, "fishing_forestry_comtrade_trade_raw") %>%
+      tbl(con, "uncomtrade_trade") %>%
         select(year, exporter_iso3 = partner_iso3, industry_id, import_value_usd) %>%
         group_by(year, exporter_iso3, industry_id) %>%
         summarise(total_exports = sum(import_value_usd, na.rm = T)) %>%
