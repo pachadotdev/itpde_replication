@@ -4,7 +4,6 @@ library(janitor)
 library(dplyr)
 library(tidyr)
 library(purrr)
-library(usitcgravity)
 library(RPostgres)
 
 # Download UN COMTRADE trade data ----
@@ -130,27 +129,14 @@ if (!"wb_isic3_to_hs92" %in% dbListTables(con)) {
 
 # Import raw trade data ----
 
-con2 <- dbConnect(
-  Postgres(),
-  host = "localhost",
-  dbname = "uncomtrade_commodities",
-  user = Sys.getenv("LOCAL_SQL_USR"),
-  password = Sys.getenv("LOCAL_SQL_PWD")
-)
-
-if (!"uncomtrade_trade" %in% dbListTables(con)) {
-  # this table is to avoid writing special country codes that we won't need
-  if (!"usitc_country_codes" %in% dbListTables(con)) {
-    con3 <- usitcgravity_connect()
-
-    country_names <- tbl(con3, "country_names") %>%
-      select(country_iso3) %>%
-      collect()
-
-    dbDisconnect(con3, shutdown = T)
-
-    dbWriteTable(con, "usitc_country_codes", country_names, overwrite = T)
-  }
+if (!"uncomtrade_imports" %in% dbListTables(con)) {
+  con2 <- dbConnect(
+    Postgres(),
+    host = "localhost",
+    dbname = "uncomtrade_commodities",
+    user = Sys.getenv("LOCAL_SQL_USR"),
+    password = Sys.getenv("LOCAL_SQL_PWD")
+  )
 
   a02 <- tbl(con, "wb_isic3_to_hs92") %>%
     filter(isic3_industry_code %in% c("A02")) %>%
@@ -169,29 +155,101 @@ if (!"uncomtrade_trade" %in% dbListTables(con)) {
     function(y) {
       message(y)
 
-      d_imp_a02 <- tbl(con2, "hs_rev1992_tf_import_al_6") %>%
+      d <- tbl(con2, "hs_rev1992_tf_import_al_6") %>%
         filter(year == y) %>%
         filter(!(partner_iso %in% c("all","wld"))) %>%
+        filter(commodity_code %in% c(a02, b05)) %>%
+        collect()
+
+      dbWriteTable(con, "uncomtrade_imports", d, append = T)
+    }
+  )
+
+  rm(a02, b05)
+  dbDisconnect(con2)
+  rm(con2)
+}
+
+if (!"uncomtrade_exports" %in% dbListTables(con)) {
+  con2 <- dbConnect(
+    Postgres(),
+    host = "localhost",
+    dbname = "uncomtrade_commodities",
+    user = Sys.getenv("LOCAL_SQL_USR"),
+    password = Sys.getenv("LOCAL_SQL_PWD")
+  )
+
+  a02 <- tbl(con, "wb_isic3_to_hs92") %>%
+    filter(isic3_industry_code %in% c("A02")) %>%
+    distinct(hs92) %>%
+    collect() %>%
+    pull()
+
+  b05 <- tbl(con, "wb_isic3_to_hs92") %>%
+    filter(isic3_industry_code %in% c("B05")) %>%
+    distinct(hs92) %>%
+    collect() %>%
+    pull()
+
+  map(
+    1988:2020,
+    function(y) {
+      message(y)
+
+      d <- tbl(con2, "hs_rev1992_tf_export_al_6") %>%
+        filter(year == y) %>%
+        filter(!(partner_iso %in% c("all","wld"))) %>%
+        filter(commodity_code %in% c(a02, b05)) %>%
+        collect()
+
+      dbWriteTable(con, "uncomtrade_exports", d, append = T)
+    }
+  )
+
+  rm(a02, b05)
+  dbDisconnect(con2)
+  rm(con2)
+}
+
+if (!"uncomtrade_trade" %in% dbListTables(con)) {
+  a02 <- tbl(con, "wb_isic3_to_hs92") %>%
+    filter(isic3_industry_code %in% c("A02")) %>%
+    distinct(hs92) %>%
+    collect() %>%
+    pull()
+
+  b05 <- tbl(con, "wb_isic3_to_hs92") %>%
+    filter(isic3_industry_code %in% c("B05")) %>%
+    distinct(hs92) %>%
+    collect() %>%
+    pull()
+
+  map(
+    1988:2020,
+    function(y) {
+      message(y)
+
+      d_imp_a02 <- tbl(con, "uncomtrade_imports") %>%
+        filter(year == y) %>%
         filter(commodity_code %in% a02) %>%
-        select(year, reporter_iso3 = reporter_iso,
-               partner_iso3 = partner_iso,
+        select(year, importer_iso3 = reporter_iso,
+               exporter_iso3 = partner_iso,
                commodity_code,
-               trade_value_usd_imp = trade_value_usd) %>%
+               import_value_usd = trade_value_usd) %>%
         collect() %>%
-        group_by(year, reporter_iso3, partner_iso3, commodity_code) %>%
+        group_by(year, importer_iso3, exporter_iso3, commodity_code) %>%
         summarise_if(is.double, sum, na.rm = T) %>%
         ungroup()
 
-      d_exp_a02 <- tbl(con2, "hs_rev1992_tf_import_al_6") %>%
+      d_exp_a02 <- tbl(con, "uncomtrade_exports") %>%
         filter(year == y) %>%
-        filter(!(partner_iso %in% c("all","wld"))) %>%
         filter(commodity_code %in% a02) %>%
-        select(year, reporter_iso3 = reporter_iso,
-               partner_iso3 = partner_iso,
+        select(year, exporter_iso3 = reporter_iso,
+               importer_iso3 = partner_iso,
                commodity_code,
-               trade_value_usd_exp = trade_value_usd) %>%
+               export_value_usd = trade_value_usd) %>%
         collect() %>%
-        group_by(year, reporter_iso3, partner_iso3, commodity_code) %>%
+        group_by(year, importer_iso3, exporter_iso3, commodity_code) %>%
         summarise_if(is.double, sum, na.rm = T) %>%
         ungroup()
 
@@ -199,45 +257,39 @@ if (!"uncomtrade_trade" %in% dbListTables(con)) {
         full_join(
           d_exp_a02 %>%
             select(-year),
-          by = c("reporter_iso3" = "partner_iso3",
-                 "partner_iso3" = "reporter_iso3",
+          by = c("importer_iso3",
+                 "exporter_iso3",
                  "commodity_code")
         ) %>%
         select(-commodity_code) %>%
         mutate(
           industry_id = 27L,
           year = y
-        ) %>%
-        rename(
-          export_value_usd = trade_value_usd_exp,
-          import_value_usd = trade_value_usd_imp
         )
 
       rm(d_exp_a02)
 
-      d_imp_b05 <- tbl(con2, "hs_rev1992_tf_import_al_6") %>%
+      d_imp_b05 <- tbl(con, "uncomtrade_imports") %>%
         filter(year == y) %>%
-        filter(!(partner_iso %in% c("all","wld"))) %>%
         filter(commodity_code %in% b05) %>%
-        select(year, reporter_iso3 = reporter_iso,
-               partner_iso3 = partner_iso,
+        select(year, importer_iso3 = reporter_iso,
+               exporter_iso3 = partner_iso,
                commodity_code,
-               trade_value_usd_imp = trade_value_usd) %>%
+               import_value_usd = trade_value_usd) %>%
         collect() %>%
-        group_by(year, reporter_iso3, partner_iso3, commodity_code) %>%
+        group_by(year, importer_iso3, exporter_iso3, commodity_code) %>%
         summarise_if(is.double, sum, na.rm = T) %>%
         ungroup()
 
-      d_exp_b05 <- tbl(con2, "hs_rev1992_tf_export_al_6") %>%
+      d_exp_b05 <- tbl(con, "uncomtrade_exports") %>%
         filter(year == y) %>%
-        filter(!(partner_iso %in% c("all","wld"))) %>%
         filter(commodity_code %in% b05) %>%
-        select(year, reporter_iso3 = reporter_iso,
-               partner_iso3 = partner_iso,
+        select(year, importer_iso3 = reporter_iso,
+               exporter_iso3 = partner_iso,
                commodity_code,
-               trade_value_usd_exp = trade_value_usd) %>%
+               export_value_usd = trade_value_usd) %>%
         collect() %>%
-        group_by(year, reporter_iso3, partner_iso3, commodity_code) %>%
+        group_by(year, importer_iso3, exporter_iso3, commodity_code) %>%
         summarise_if(is.double, sum, na.rm = T) %>%
         ungroup()
 
@@ -245,18 +297,14 @@ if (!"uncomtrade_trade" %in% dbListTables(con)) {
         full_join(
           d_exp_b05 %>%
             select(-year),
-          by = c("reporter_iso3" = "partner_iso3",
-                 "partner_iso3" = "reporter_iso3",
+          by = c("importer_iso3",
+                 "exporter_iso3",
                  "commodity_code")
         ) %>%
         select(-commodity_code) %>%
         mutate(
           industry_id = 28L,
           year = y
-        ) %>%
-        rename(
-          export_value_usd = trade_value_usd_exp,
-          import_value_usd = trade_value_usd_imp
         )
 
       rm(d_exp_b05)
@@ -266,17 +314,17 @@ if (!"uncomtrade_trade" %in% dbListTables(con)) {
 
       d_imp <- d_imp %>%
         mutate(
-          reporter_iso3 = toupper(case_when(
-            reporter_iso3 == "e-490" ~ "twn",
-            reporter_iso3 %in% c("drc", "zar") ~ "cod",
-            reporter_iso3 == "rom" ~ "rou",
-            TRUE ~ reporter_iso3
+          importer_iso3 = toupper(case_when(
+            importer_iso3 == "e-490" ~ "twn",
+            importer_iso3 %in% c("drc", "zar") ~ "cod",
+            importer_iso3 == "rom" ~ "rou",
+            TRUE ~ importer_iso3
           )),
-          partner_iso3 = toupper(case_when(
-            partner_iso3 == "e-490" ~ "twn",
-            partner_iso3 %in% c("drc", "zar") ~ "cod",
-            partner_iso3 == "rom" ~ "rou",
-            TRUE ~ partner_iso3
+          exporter_iso3 = toupper(case_when(
+            exporter_iso3 == "e-490" ~ "twn",
+            exporter_iso3 %in% c("drc", "zar") ~ "cod",
+            exporter_iso3 == "rom" ~ "rou",
+            TRUE ~ exporter_iso3
           ))
         )
 
@@ -285,15 +333,15 @@ if (!"uncomtrade_trade" %in% dbListTables(con)) {
           tbl(con, "usitc_country_codes") %>%
             collect() %>%
             distinct() %>%
-            rename(reporter_iso3 = country_iso3)
+            rename(importer_iso3 = country_iso3)
         ) %>%
         inner_join(
           tbl(con, "usitc_country_codes") %>%
             collect() %>%
             distinct() %>%
-            rename(partner_iso3 = country_iso3)
+            rename(exporter_iso3 = country_iso3)
         ) %>%
-        group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
+        group_by(year, importer_iso3, exporter_iso3, industry_id) %>%
         summarise_if(is.numeric, sum, na.rm = T)
 
       dbWriteTable(con, "uncomtrade_trade", d_imp, append = T)
@@ -393,8 +441,14 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
       export_value_usd = export_value_usd / 1000000
     )
 
+  d_trade %>%
+    filter(is.na(import_value_usd))
+
+  d_trade %>%
+    filter(is.na(export_value_usd))
+
   d_trade <- d_trade %>%
-    mutate_if(is.double, function(x) ifelse(is.na(x), 0, x)) %>%
+    # mutate_if(is.double, function(x) ifelse(is.na(x), 0, x)) %>%
     mutate(
       trade = case_when(
         import_value_usd == 0 ~ export_value_usd,
@@ -411,9 +465,12 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
       )
     )
 
+  d_trade <- d_trade %>%
+    select(-import_value_usd, -export_value_usd)
+
   ## Production -----
 
-  ### Copy GDP table to SQL with GDP ratios ----
+  ### Copy GDP table to SQL ----
 
   if (!"unstats_gdp" %in% dbListTables(con)) {
     gdp_local <- read_excel(xlsx_gdp_local, skip = 2) %>%
@@ -553,13 +610,13 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   ## Combine tables ----
 
   d_trade <- d_trade %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, trade, flag_mirror, flag_zero, flag_flow) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code) %>%
     bind_rows(
       d_prod %>%
-        select(year, exporter_iso3, importer_iso3, industry_id, trade, flag_mirror, flag_zero, flag_flow)
+        select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
     )
 
-  dbWriteTable(con, "fishing_forestry_comtrade_trade_tidy", d_trade, overwrite = T)
+  rm(d_prod)
 
-  dbDisconnect(con, shutdown = T)
+  dbWriteTable(con, "uncomtrade_trade_tidy", d_trade, overwrite = T)
 }
