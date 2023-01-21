@@ -386,6 +386,14 @@ if (!"undata_production" %in% dbListTables(con)) {
 # Import country names ----
 
 if (!"uncomtrade_country_codes" %in% dbListTables(con)) {
+  con2 <- dbConnect(
+    Postgres(),
+    host = "localhost",
+    dbname = "uncomtrade_commodities",
+    user = Sys.getenv("LOCAL_SQL_USR"),
+    password = Sys.getenv("LOCAL_SQL_PWD")
+  )
+
   d_iso_codes <- map_df(
     1988:2020,
     function(y) {
@@ -413,9 +421,9 @@ if (!"uncomtrade_country_codes" %in% dbListTables(con)) {
   gc()
 
   dbWriteTable(con, "uncomtrade_country_codes", d_iso_codes, overwrite = T)
-}
 
-dbDisconnect(con2)
+  dbDisconnect(con2)
+}
 
 # Tidy data (combine trade and production in same final table) ----
 
@@ -423,7 +431,7 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   ## Trade data ----
 
   d_trade <- tbl(con, "uncomtrade_trade") %>%
-    select(year, exporter_iso3 = partner_iso3, importer_iso3 = reporter_iso3,
+    select(year, importer_iso3, exporter_iso3,
            industry_id, import_value_usd, export_value_usd) %>%
     group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
     summarise(
@@ -566,14 +574,16 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
 
   d_prod <- d_prod %>%
     rename(exporter_iso3 = country_iso3) %>%
-    mutate(importer_iso3 = exporter_iso3) %>%
+    mutate(
+      importer_iso3 = exporter_iso3,
+      production_usd = production_usd / 1000000
+    ) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
     full_join(
-      tbl(con, "uncomtrade_trade") %>%
-        filter(reporter_iso3 != partner_iso3) %>%
-        select(year, exporter_iso3 = partner_iso3, industry_id, import_value_usd) %>%
+      d_trade %>%
+        select(year, exporter_iso3, industry_id, trade) %>%
         group_by(year, exporter_iso3, industry_id) %>%
-        summarise(total_exports = sum(import_value_usd, na.rm = T)) %>%
+        summarise(total_exports = sum(trade, na.rm = T)) %>%
         collect()
     ) %>%
     mutate(
