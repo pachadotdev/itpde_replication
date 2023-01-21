@@ -372,7 +372,46 @@ dbDisconnect(con2)
 # Tidy data (combine trade and production in same final table) ----
 
 if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
-  ## Tidy production -----
+  ## Trade data ----
+
+  d_trade <- tbl(con, "uncomtrade_trade") %>%
+    select(year, exporter_iso3 = partner_iso3, importer_iso3 = reporter_iso3,
+           industry_id, import_value_usd, export_value_usd) %>%
+    group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
+    summarise(
+      import_value_usd = sum(import_value_usd, na.rm = T),
+      export_value_usd = sum(export_value_usd, na.rm = T)
+    ) %>%
+    collect()
+
+  d_trade <- d_trade %>%
+    arrange(exporter_iso3, year)
+
+  d_trade <- d_trade %>%
+    mutate(
+      import_value_usd = import_value_usd / 1000000,
+      export_value_usd = export_value_usd / 1000000
+    )
+
+  d_trade <- d_trade %>%
+    mutate_if(is.double, function(x) ifelse(is.na(x), 0, x)) %>%
+    mutate(
+      trade = case_when(
+        import_value_usd == 0 ~ export_value_usd,
+        TRUE ~ import_value_usd
+      ),
+      trade_flag_code = case_when(
+        is.na(trade) ~ 1L, # 1 means trade = NA
+        import_value_usd == 0 ~ 2L, # 2 means trade = exports
+        import_value_usd > 0 ~ 3L # 3 means trade = imports
+      ),
+      trade = case_when(
+        is.na(trade) ~ 0,
+        TRUE ~ trade
+      )
+    )
+
+  ## Production -----
 
   ### Copy GDP table to SQL with GDP ratios ----
 
@@ -510,29 +549,6 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
       )
     ) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
-
-  ## Trade data ----
-
-  ### Get imports/exports ----
-
-  d_trade <- tbl(con, "uncomtrade_trade") %>%
-    select(year, exporter_iso3 = partner_iso3, importer_iso3 = reporter_iso3,
-           industry_id, import_value_usd, export_value_usd) %>%
-    group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
-    summarise(
-      import_value_usd = sum(import_value_usd, na.rm = T),
-      export_value_usd = sum(export_value_usd, na.rm = T)
-    ) %>%
-    collect()
-
-  d_trade <- d_trade %>%
-    arrange(exporter_iso3, year)
-
-  # FORMALIZE THIS DIVISION LATER
-  d_trade$import_value_usd <- d_trade$import_value_usd / 1000000
-  d_trade$export_value_usd <- d_trade$export_value_usd / 1000000
-
-  # TODO: FLAGS!
 
   ## Combine tables ----
 
