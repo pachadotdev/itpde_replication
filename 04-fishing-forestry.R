@@ -581,7 +581,8 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
     select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
     full_join(
       d_trade %>%
-        select(year, exporter_iso3, industry_id, trade) %>%
+        # remove domestic trade before substracting from production
+        filter(exporter_iso3 != importer_iso3) %>%
         group_by(year, exporter_iso3, industry_id) %>%
         summarise(total_exports = sum(trade, na.rm = T)) %>%
         collect()
@@ -630,3 +631,5 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
 
   dbWriteTable(con, "uncomtrade_trade_tidy", d_trade, overwrite = T)
 }
+
+dbDisconnect(con)
