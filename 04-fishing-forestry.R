@@ -15,17 +15,33 @@ library(RPostgres)
 # Download UN Data production data ----
 
 # the file was downloaded from the browser and points to
-# http://data.un.org/Handlers/DownloadHandler.ashx?DataFilter=group_code:206;fiscal_year:1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020;sub_item_code:22,23&DataMartId=SNA&Format=psv&c=2,3,5,6,8,9,10,11,12,13,14,15&s=_cr_engNameOrderBy:asc,fiscal_year:desc,_grSbIt_code:asc
-# see image for http://data.un.org/Data.aspx?d=SNA&f=group_code%3a206
-# (inp/undata_forestry_and_fishing_production.png)
+# http://data.un.org/Data.aspx?q=Output%2c+gross+value+added+and+fixed+assets+by+industries+at+current+prices&d=SNA&f=group_code%3a206
+# (inp/undata_forestry_and_fishing_production.png
 # the file is inp/undata_forestry_and_fishing_production.zip
 
-zip_production_isic4 <- "inp/undata_forestry_and_fishing_production_isic4.zip"
-txt_production_isic4 <- "inp/undata_forestry_and_fishing_production_isic4.txt"
+zip_production_isic4 <- "inp/undata_forestry_and_fishing_production.zip"
+txt_production_isic4 <- "inp/undata_forestry_and_fishing_production.csv"
 
 if (!file.exists(txt_production_isic4)) {
   unzip(zip_production_isic4, exdir = "inp")
-  file.rename("inp/UNdata_Export_20221104_165440293.txt", txt_production_isic4)
+  file.rename("inp/UNdata_Export_20230123_215204713.csv", txt_production_isic4)
+}
+
+# Download IMF exchange rate ----
+
+# The series corresponds to "Domestic Currency per U.S. Dollar, Period Average, Rate"
+# the file was downloaded from the browser and points to
+# https://data.imf.org/?sk=4c514d48-b6ba-49ed-8ab9-52b0c1a0179b&sId=1409151240976
+# (inp/imf_fishing_forestry_exchange_rate_1.png and
+# inp/imf_fishing_forestry_exchange_rate_2.png)
+# the file is inp/imf_fishing_forestry_exchange_rate.zip
+
+zip_exchange_rate <- "inp/imf_fishing_forestry_exchange_rate.zip"
+csv_exchange_rate <- "inp/imf_fishing_forestry_exchange_rate.csv"
+
+if (!file.exists(csv_exchange_rate)) {
+  unzip(zip_exchange_rate, exdir = "inp")
+  file.rename("inp/IFS_01-23-2023 21-11-09-50_timeSeries.csv", csv_exchange_rate)
 }
 
 # Download HS92 (H0) to ISIC3 codes ----
@@ -352,20 +368,16 @@ if (!"uncomtrade_trade" %in% dbListTables(con)) {
 # Import raw production data ----
 
 if (!"undata_production" %in% dbListTables(con)) {
-  d_prod <- read_delim(txt_production_isic4,
-                       delim = "|",
-                       escape_double = FALSE,
+  d_prod <- read_csv(txt_production_isic4,
                        col_types = cols(`Sub Group` = col_character(),
                                         Year = col_character(), Series = col_character(),
                                         `SNA system` = col_character(), Value = col_character(),
                                         `Value Footnotes` = col_character()),
-                       trim_ws = TRUE, n_max = 25987) %>%
+                       trim_ws = TRUE, n_max = 3477) %>%
     clean_names()
 
-  d_prod_footnotes <- read_delim(txt_production_isic4,
-                          delim = "|",
-                          escape_double = FALSE,
-                          trim_ws = TRUE, skip = 25988) %>%
+  d_prod_footnotes <- read_csv(txt_production_isic4,
+                          trim_ws = TRUE, skip = 3478) %>%
     clean_names()
 
   # unique(d_prod$sub_item)
@@ -381,6 +393,68 @@ if (!"undata_production" %in% dbListTables(con)) {
 
   dbWriteTable(con, "undata_production", d_prod, append = T)
   dbWriteTable(con, "undata_production_footnotes", d_prod_footnotes, append = T)
+}
+
+# Import exchange rate ----
+
+if (!"imf_exchange_rate" %in% dbListTables(con)) {
+  exchange_rate <- read_csv(
+      "inp/imf_fishing_forestry_exchange_rate.csv",
+      col_types = cols(
+        `1986` = col_double(),
+        `1987` = col_double(),
+        `1988` = col_double(),
+        `1989` = col_double(),
+        `1990` = col_double(),
+        `1991` = col_double(),
+        `1992` = col_double(),
+        `1993` = col_double(),
+        `1994` = col_double(),
+        `1995` = col_double(),
+        `1996` = col_double(),
+        `1997` = col_double(),
+        `1998` = col_double(),
+        `1999` = col_double(),
+        `2000` = col_double(),
+        `2001` = col_double(),
+        `2002` = col_double(),
+        `2003` = col_double(),
+        `2004` = col_double(),
+        `2005` = col_double(),
+        `2006` = col_double(),
+        `2007` = col_double(),
+        `2008` = col_double(),
+        `2009` = col_double(),
+        `2010` = col_double(),
+        `2011` = col_double(),
+        `2012` = col_double(),
+        `2013` = col_double(),
+        `2014` = col_double(),
+        `2015` = col_double(),
+        `2016` = col_double(),
+        `2017` = col_double(),
+        `2018` = col_double(),
+        `2019` = col_double(),
+        `2020` = col_double()
+      )
+    ) %>%
+    clean_names()
+
+  exchange_rate <- exchange_rate %>%
+    pivot_longer(x1986:x2020) %>%
+    rename(year = name) %>%
+    mutate(year = as.integer(gsub("x", "", year)))
+
+  exchange_rate <- exchange_rate %>%
+    select(year, everything()) %>%
+    arrange(year, country_name, indicator_name)
+
+  unique(exchange_rate$x42)
+
+  exchange_rate <- exchange_rate %>%
+    select(-x42)
+
+  dbWriteTable(con, "imf_exchange_rate", exchange_rate, append = T)
 }
 
 # Import country names ----
@@ -478,56 +552,15 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
 
   ## Production -----
 
-  ### Copy GDP table to SQL ----
-
-  if (!"unstats_gdp" %in% dbListTables(con)) {
-    gdp_local <- read_excel(xlsx_gdp_local, skip = 2) %>%
-      pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_local_currency") %>%
-      clean_names()
-
-    gdp_usd <- read_excel(xlsx_gdp_usd, skip = 2) %>%
-      pivot_longer(`1970`:`2020`, names_to = "year", values_to = "gdp_usd") %>%
-      clean_names()
-
-    gdp_usd <- gdp_usd %>%
-      full_join(gdp_local)
-
-    gdp_usd <- gdp_usd %>%
-      select(year, country_id, country, indicator_name, currency, gdp_local_currency, gdp_usd) %>%
-      mutate(
-        year = as.integer(year),
-        gdp_rate = gdp_usd / gdp_local_currency,
-      ) %>%
-      filter(indicator_name == "Gross Domestic Product (GDP)") %>%
-      select(-indicator_name)
-
-    dbWriteTable(con, "unstats_gdp", gdp_usd, overwrite = T)
-
-    rm(gdp_local, gdp_usd)
-  }
-
-  ### Get raw production and convert all currencies to USD ----
+  ### Get raw production in local currencies ----
 
   d_prod <- tbl(con, "undata_production") %>%
-    filter(item == "Output, at basic prices") %>%
-    select(year, country = country_or_area, sub_item, production_local_currency = value) %>%
+    filter(year >= 1986) %>%
+    select(year, country = country_or_area, sub_item, currency, production_local_currency = value) %>%
     mutate(country = toupper(country)) %>%
-    left_join(
-      tbl(con, "unstats_gdp") %>%
-        mutate(
-          year = as.integer(year),
-          country = toupper(ifelse(
-            country == "U.R. of Tanzania: Mainland" , "Tanzania - Mainland", country
-          ))
-        ) %>%
-        filter(year %in% 1988:2020) %>%
-        select(year, country, country_id, gdp_rate)
-    ) %>%
     left_join(
       tbl(con, "uncomtrade_country_codes")
     ) %>%
-    mutate(production_usd = production_local_currency * gdp_rate) %>%
-    select(-gdp_rate, -production_local_currency) %>%
     collect()
 
   ### Fix ISO-3 codes ----
@@ -535,17 +568,28 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   d_prod <- d_prod %>%
     mutate(
       country_iso3 = case_when(
-        country == "BOSNIA AND HERZEGOVINA" ~ "BIH", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
-        country == "BRITISH VIRGIN ISLANDS" ~ "VGB", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
-        country == "CAYMAN ISLANDS" ~ "CYM", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
+        # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
+        country == "BOSNIA AND HERZEGOVINA" ~ "BIH",
+        country == "BRITISH VIRGIN ISLANDS" ~ "VGB",
+        country == "CAYMAN ISLANDS" ~ "CYM",
+        country == "CHINA, HONG KONG SPECIAL ADMINISTRATIVE REGION" ~ "HKG",
+        country == "CURAÇAO" ~ "CUW",
+        country == "DOMINICAN REPUBLIC" ~ "DOM",
+        country == "FAROE ISLANDS" ~ "FRO",
         country == "FRANCE" ~ "FRA",
         country == "INDIA" ~ "IND",
-        country == "IRAN (ISLAMIC REPUBLIC OF)" ~ "IRN", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
+        country == "IRAN (ISLAMIC REPUBLIC OF)" ~ "IRN",
         country == "ITALY" ~ "IND",
+        country == "LIECHTENSTEIN" ~ "LIE",
         country == "NORWAY" ~ "NOR",
+        country == "REPUBLIC OF KOREA" ~ "KOR",
+        country == "REPUBLIC OF MOLDOVA" ~ "MDA",
+        country == "SAN MARINO" ~ "SMR",
+        country == "SINT MAARTEN" ~ "SXM",
+        country == "SOUTH SUDAN" ~ "SSD",
         country == "TANZANIA - MAINLAND" ~ "TZA",
         country == "UNITED STATES" ~ "USA",
-        country == "ZANZIBAR" ~ "EAZ", # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3,
+        country == "ZANZIBAR" ~ "EAZ",
         TRUE ~ country_iso3
       )
     )
@@ -567,7 +611,12 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
         sub_item == "Fishing and aquaculture (03)" ~ 28L
       )
     ) %>%
-    select(year, country_iso3, industry_id, production_usd)
+    select(year, country_iso3, industry_id, production_local_currency)
+
+  d_prod %>%
+    filter(is.na(industry_id))
+
+  ### Local currency in million ----
 
   d_prod <- d_prod %>%
     arrange(country_iso3, year)
@@ -576,9 +625,36 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
     rename(exporter_iso3 = country_iso3) %>%
     mutate(
       importer_iso3 = exporter_iso3,
-      production_usd = production_usd / 1000000
+      production_local_currency = production_local_currency / 1000000
     ) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, production_local_currency)
+
+  ### Convert to USD ----
+
+  d_prod_2 = d_prod %>%
+    left_join(
+      tbl(con, "imf_exchange_rate") %>%
+        filter(
+          indicator_name == "Exchange Rates, US Dollar per Domestic Currency, Period Average, Rate" &
+            attribute == "Value"
+        ) %>%
+        select(year, country_name, value) %>%
+        mutate(country_name = toupper(country_name)) %>%
+        left_join(
+          tbl(con, "uncomtrade_country_codes") %>%
+            select(country, country_iso3),
+          by = c("country_name" = "country")
+        ) %>%
+        collect(),
+      by = c("year", "exporter_iso3" = "country_iso3")
+    )
+
+  d_prod_2 %>%
+    filter(is.na(value)) %>%
+    distinct(year, exporter_iso3)
+
+  ### Join with trade ---
+
     full_join(
       d_trade %>%
         # remove domestic trade before substracting from production
