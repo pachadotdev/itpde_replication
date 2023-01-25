@@ -11,6 +11,135 @@ how was done in the article.
 
 The year range is 1986-2020.
 
+# Issues
+
+There are no domestic flows for fishing and forestry in the original
+table “usitc_trade”.
+
+# Validation
+
+I am organizing everything into a PostgreSQL database to do efficient
+queries to validate my replication process.
+
+Steps:
+
+- [ ] Agriculture
+  - [ ] Not Fishing and Forestry
+  - [ ] Fishing and Forestry
+- [ ] Manufacturing
+- [ ] Mining and Energy
+- [ ] Services
+
+I need to validate with pointblank besides quantiles.
+
+## SQL Connection
+
+## Agriculture (Not Fishing and Forestry)
+
+``` r
+agriculture_international <- tbl(con, "usitc_trade") %>%
+  filter(broad_sector_id == 1L) %>%
+  filter(
+    !industry_id %in% 27L:28L,
+    exporter_iso3 != importer_iso3
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, industry_id, trade_original = trade) %>%
+  full_join(
+    tbl(con, "fao_trade_tidy") %>%
+      select(year, exporter_iso3, importer_iso3, industry_id, trade_replication = trade)
+  ) %>%
+  mutate(
+    trade_replication = trade_replication,
+    diff = trade_original - trade_replication
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, trade_original, trade_replication, diff) %>% 
+  collect()
+#> Joining, by = c("year", "exporter_iso3", "importer_iso3", "industry_id")
+
+# difference (in million)
+round(quantile(agriculture_international$diff, na.rm = T), 3)
+#>       0%      25%      50%      75%     100% 
+#> -294.398    0.000    0.000    0.000 2261.782
+
+agriculture_domestic <- tbl(con, "usitc_trade") %>%
+  filter(broad_sector_id == 1L) %>%
+  filter(
+    !industry_id %in% 27L:28L,
+    exporter_iso3 == importer_iso3
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, industry_id, trade_original = trade) %>%
+  full_join(
+    tbl(con, "fao_trade_tidy") %>%
+      select(year, exporter_iso3, importer_iso3, industry_id, trade_replication = trade)
+  ) %>%
+  mutate(
+    trade_replication = trade_replication,
+    diff = trade_original - trade_replication
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, trade_original, trade_replication, diff) %>% 
+  collect()
+#> Joining, by = c("year", "exporter_iso3", "importer_iso3", "industry_id")
+
+# difference (in million)
+round(quantile(agriculture_domestic$diff, na.rm = T), 3)
+#>         0%        25%        50%        75%       100% 
+#> -30613.787    -11.079     -0.300      0.000  11125.777
+```
+
+## Agriculture (Fishing and Forestry)
+
+``` r
+fishing_forestry_international <- tbl(con, "usitc_trade") %>%
+  filter(broad_sector_id == 1L) %>%
+  filter(
+    industry_id %in% 27L:28L,
+    exporter_iso3 != importer_iso3
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, industry_id, trade_original = trade) %>%
+  full_join(
+    tbl(con, "uncomtrade_trade_tidy") %>%
+      select(year, exporter_iso3, importer_iso3, industry_id, trade_replication = trade)
+  ) %>%
+  mutate(
+    trade_replication = trade_replication,
+    diff = trade_original - trade_replication
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, trade_original, trade_replication, diff) %>% 
+  collect()
+#> Joining, by = c("year", "exporter_iso3", "importer_iso3", "industry_id")
+
+# difference (in million)
+round(quantile(fishing_forestry_international$diff, na.rm = T), 3)
+#>        0%       25%       50%       75%      100% 
+#> -3719.669    -0.001     0.000     0.000   375.109
+
+fishing_forestry_domestic <- tbl(con, "usitc_trade") %>%
+  filter(broad_sector_id == 1L) %>%
+  filter(
+    industry_id %in% 27L:28L,
+    exporter_iso3 == importer_iso3
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, industry_id, trade_original = trade) %>%
+  full_join(
+    tbl(con, "fao_trade_tidy") %>%
+      select(year, exporter_iso3, importer_iso3, industry_id, trade_replication = trade)
+  ) %>%
+  mutate(
+    trade_replication = trade_replication,
+    diff = trade_original - trade_replication
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, trade_original, trade_replication, diff) %>% 
+  collect()
+#> Joining, by = c("year", "exporter_iso3", "importer_iso3", "industry_id")
+
+# difference (in million)
+round(quantile(fishing_forestry_domestic$diff, na.rm = T), 3)
+#>   0%  25%  50%  75% 100% 
+#>   NA   NA   NA   NA   NA
+
+dbDisconnect(con)
+```
+
 # Agriculture
 
 ## Trade data
