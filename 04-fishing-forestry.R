@@ -4,6 +4,7 @@ library(janitor)
 library(dplyr)
 library(tidyr)
 library(purrr)
+library(stringr)
 library(RPostgres)
 
 # Download UN COMTRADE trade data ----
@@ -454,7 +455,12 @@ if (!"imf_exchange_rate" %in% dbListTables(con)) {
   exchange_rate <- exchange_rate %>%
     select(-x42)
 
-  dbWriteTable(con, "imf_exchange_rate", exchange_rate, append = T)
+  exchange_rate <- exchange_rate %>%
+    filter(attribute == "Value") %>%
+    filter(indicator_name == "Exchange Rates, US Dollar per Domestic Currency, Period Average, Rate") %>%
+    select(-attribute, -indicator_name, -country_code, -indicator_code)
+
+  dbWriteTable(con, "imf_exchange_rate", exchange_rate, overwrite = T)
 }
 
 # Import country names ----
@@ -631,15 +637,29 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
 
   ### Convert to USD ----
 
-  d_prod_2 = d_prod %>%
+  d_prod <- d_prod %>%
     left_join(
       tbl(con, "imf_exchange_rate") %>%
-        filter(
-          indicator_name == "Exchange Rates, US Dollar per Domestic Currency, Period Average, Rate" &
-            attribute == "Value"
-        ) %>%
         select(year, country_name, value) %>%
         mutate(country_name = toupper(country_name)) %>%
+        mutate(country_name = str_replace(country_name, ", ISLAMIC REP. OF|, REP. OF|, KINGDOM .*|, THE|, UNION .*|, ARAB .*", "")) %>%
+        mutate(
+          country_name = case_when(
+            country_name == "BOLIVIA" ~ "BOLIVIA (PLURINATIONAL STATE OF)",
+            country_name == "BOSNIA AND HERZEGOVINA" ~ "BOSNIA HERZEGOVINA",
+            country_name == "CHINA, P.R.: MAINLAND" ~ "CHINA",
+            country_name == "CHINA, P.R.: HONG KONG" ~ "CHINA, HONG KONG SAR",
+            country_name == "CHINA, P.R.: MACAO" ~ "CHINA, MACAO SAR",
+            country_name == "CONGO, DEM. REP. OF THE" ~ "DEM. REP. OF THE CONGO",
+            country_name == "CZECH REP." ~ "CZECHIA",
+            country_name == "ERITREA STATE OF" ~ "ERITREA",
+            country_name == "ETHIOPIA FEDERAL DEM. REP. OF" ~ "ETHIOPIA",
+            country_name == "FAROE ISLANDS" ~ "FAEROE ISDS",
+            country_name == "SLOVAK REP." ~ "SLOVAKIA",
+            country_name == "UNITED STATES" ~ "USA",
+            TRUE ~ country_name
+          )
+        ) %>%
         left_join(
           tbl(con, "uncomtrade_country_codes") %>%
             select(country, country_iso3),
@@ -649,9 +669,10 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
       by = c("year", "exporter_iso3" = "country_iso3")
     )
 
-  d_prod_2 %>%
+  d_prod %>%
     filter(is.na(value)) %>%
-    distinct(year, exporter_iso3)
+    distinct(exporter_iso3, country_name) %>%
+    View()
 
   ### Join with trade ---
 
