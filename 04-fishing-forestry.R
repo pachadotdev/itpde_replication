@@ -561,7 +561,7 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   ### Get raw production in local currencies ----
 
   d_prod <- tbl(con, "undata_production") %>%
-    filter(year >= 1986) %>%
+    filter(year %in% 1986L:2020) %>%
     select(year, country = country_or_area, sub_item, currency, production_local_currency = value) %>%
     mutate(country = toupper(country)) %>%
     left_join(
@@ -638,12 +638,12 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   ### Convert to USD ----
 
   d_prod <- d_prod %>%
-    left_join(
+    inner_join(
       tbl(con, "imf_exchange_rate") %>%
         select(year, country_name, value) %>%
-        mutate(country_name = toupper(country_name)) %>%
-        mutate(country_name = str_replace(country_name, ", ISLAMIC REP. OF|, REP. OF|, KINGDOM .*|, THE|, UNION .*|, ARAB .*", "")) %>%
         mutate(
+          country_name = toupper(country_name),
+          country_name = str_replace(country_name, ", ISLAMIC REP. OF|, REP.*|, UNITED .*|, KINGDOM .*|, THE|, UNION .*|, ARAB .*", ""),
           country_name = case_when(
             country_name == "BOLIVIA" ~ "BOLIVIA (PLURINATIONAL STATE OF)",
             country_name == "BOSNIA AND HERZEGOVINA" ~ "BOSNIA HERZEGOVINA",
@@ -660,7 +660,7 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
             TRUE ~ country_name
           )
         ) %>%
-        left_join(
+        inner_join(
           tbl(con, "uncomtrade_country_codes") %>%
             select(country, country_iso3),
           by = c("country_name" = "country")
@@ -669,20 +669,27 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
       by = c("year", "exporter_iso3" = "country_iso3")
     )
 
-  d_prod %>%
-    filter(is.na(value)) %>%
-    distinct(exporter_iso3, country_name) %>%
-    View()
+  # d_prod %>%
+  #   filter(is.na(value)) %>%
+  #   distinct(exporter_iso3, country_name)
+
+  d_prod <- d_prod %>%
+    select(-country_name) %>%
+    drop_na(value)
+
+  d_prod <- d_prod %>%
+    mutate(production_usd = production_local_currency * value) %>%
+    select(-value)
 
   ### Join with trade ---
 
+  d_prod <- d_prod %>%
     full_join(
       d_trade %>%
         # remove domestic trade before substracting from production
         filter(exporter_iso3 != importer_iso3) %>%
         group_by(year, exporter_iso3, industry_id) %>%
-        summarise(total_exports = sum(trade, na.rm = T)) %>%
-        collect()
+        summarise(total_exports = sum(trade, na.rm = T))
     ) %>%
     mutate(
       trade_flag_code = case_when(
@@ -723,6 +730,9 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
       d_prod %>%
         select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
     )
+
+  d_trade %>%
+    filter(exporter_iso3 == importer_iso3)
 
   rm(d_prod)
 
