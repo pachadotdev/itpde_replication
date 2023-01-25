@@ -326,6 +326,10 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
       rm(d2)
 
+      # trade in million
+      d  <- d %>%
+        mutate(trade = trade / 1000000)
+
       # if (!"export_quantity_no" %in% colnames(d)) {
       #   d$export_quantity_no <- 0
       # }
@@ -440,6 +444,10 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       )
     ) %>%
     select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
+
+  # trade in million
+  fao_production <- fao_production %>%
+    mutate(trade = trade / 1000000)
 
   # add table with flags
   fao_trade_tidy_flag_code <- tibble(

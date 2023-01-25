@@ -1,5 +1,12 @@
 pdf
 .Rproj.user
 .Rhistory
-inp
 out/rds
+inp/*.zip
+inp/*.csv
+inp/*.xlsx
+inp/*.xlsx#
+inp/*.txt
+inp/*.pdf
+inp/faostat_production_matrix
+inp/faostat_trade_matrix

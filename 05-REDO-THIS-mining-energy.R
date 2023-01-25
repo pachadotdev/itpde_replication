@@ -31,13 +31,31 @@ if (!dir.exists(dir_comtrade_data)) {
 # the file was downloaded from the browser and points to
 # https://stat.unido.org/database/MINSTAT%202022,%20ISIC%20Revision%203
 # see image inp/unido_mining_and_energy_isic3_production.png
-# the file is inp/export20221213213948_42867e0a-8404-428a-aaed-43b661c72bf0.xlsx
+# the original file was inp/export20221220221641_1ed65183-8309-454b-a298-81519e764ff7.xlsx
+# i renamed to inp/unido_mining_and_energy_isic3_production.xlsx
 
 # ISIC 4
 # the file was downloaded from the browser and points to
 # https://stat.unido.org/database/MINSTAT%202022,%20ISIC%20Revision%204
 # see image inp/unido_mining_and_energy_isic4_production.png
-# the file is inp/export20221213213948_42867e0a-8404-428a-aaed-43b661c72bf0.xlsx
+# the original file was inp/export20221220221829_3f574e85-d7c9-424e-aaaa-c925a4131609.xlsx
+# i renamed to inp/unido_mining_and_energy_isic4_production.xlsx
+
+# Download ISIC codes ----
+
+url_isic3_to_isic31 <- "https://unstats.un.org/unsd/classifications/Econ/tables/ISIC/ISIC3_ISIC31/ISIC_Rev_3-ISIC_Rev_3_1_correspondence.txt"
+url_isic31_to_isic4 <- "https://unstats.un.org/unsd/classifications/Econ/tables/ISIC/ISIC31_ISIC4/ISIC31_ISIC4.txt"
+
+txt_isic3_to_isic31 <- "inp/isic3_to_isic31.txt"
+txt_isic31_to_isic4 <- "inp/isic31_to_isic4.txt"
+
+if (!file.exists(txt_isic3_to_isic31)) {
+  try(download.file(url_isic3_to_isic31, txt_isic3_to_isic31))
+}
+
+if (!file.exists(txt_isic31_to_isic4)) {
+  try(download.file(url_isic31_to_isic4, txt_isic31_to_isic4))
+}
 
 # Read codes ----
 
@@ -80,6 +98,19 @@ if (!"mining_energy_isic3_to_hs92" %in% dbListTables(con)) {
     distinct(hs92, .keep_all = T)
 
   dbWriteTable(con, "mining_energy_isic3_to_hs92", mining_codes, overwrite = T)
+}
+
+if (!"mining_energy_isic3_to_isic31_to_isic4" %in% dbListTables(con)) {
+  isic3_isic31 <- read_delim(txt_isic3_to_isic31) %>%
+    select(isic3 = Rev3, isic31 = Rev31)
+
+  isic31_isic4 <- read_delim(txt_isic31_to_isic4) %>%
+    select(isic31 = ISIC31code, isic4 = ISIC4code)
+
+  isic3_to_isic31_to_isic4 <- full_join(isic3_isic31, isic31_isic4)
+
+  dbWriteTable(con, "mining_energy_isic3_to_isic31_to_isic4",
+               isic3_to_isic31_to_isic4, overwrite = T)
 }
 
 dbDisconnect(con, shutdown = T)
@@ -199,10 +230,17 @@ if (!"mining_energy_comtrade_trade_raw" %in% dbListTables(con)) {
 con <- dbConnect(duckdb(), dbdir = "out/itpde_replication.duckdb", read_only = FALSE)
 
 if (!"mining_energy_unido_production_raw" %in% dbListTables(con)) {
-  production_isic3 <- read_excel("inp/export20221213213948_42867e0a-8404-428a-aaed-43b661c72bf0.xlsx",
+  ## ISIC 3 ----
+
+  production_isic3 <- read_excel("inp/unido_mining_and_energy_isic3_production.xlsx",
                                  sheet = "Data") %>%
     clean_names() %>%
-    filter(table_description_2 == "Output", unit == "$") %>%
+    filter(
+      table_description_2 == "Output",
+      unit == "$",
+      year < 2005,
+      nchar(isic) == 3
+    ) %>%
     inner_join(
       tbl(con, "mining_energy_isic3_to_hs92") %>%
         select(isic3, industry_id) %>%
@@ -242,7 +280,75 @@ if (!"mining_energy_unido_production_raw" %in% dbListTables(con)) {
     group_by(year, country_description, industry_id) %>%
     summarise(value2 = sum(value2, na.rm = T))
 
-  dbWriteTable(con, "mining_energy_unido_production_raw", production_isic3, append = T)
+  ## ISIC 4 ----
+
+  production_isic4 <- read_excel("inp/unido_mining_and_energy_isic4_production.xlsx",
+                                 sheet = "Data") %>%
+    clean_names() %>%
+    filter(
+      table_description_2 == "Output",
+      unit == "$",
+      year >= 2005,
+      nchar(isic) == 3
+    ) %>%
+
+    # convert ISIC4 to ISIC3
+    left_join(
+      tbl(con, "mining_energy_isic3_to_isic31_to_isic4") %>%
+        select(isic3, isic4) %>%
+        mutate(
+          isic3 = substr(isic3, 1, 3),
+          isic4 = substr(isic4, 1, 3)
+        ) %>%
+        collect() %>%
+        distinct(isic4, .keep_all = T),
+      by = c("isic" = "isic4")
+    ) %>%
+    select(-isic) %>%
+
+    inner_join(
+      tbl(con, "mining_energy_isic3_to_hs92") %>%
+        select(isic3, industry_id) %>%
+        distinct() %>%
+        collect() %>%
+        mutate(isic3 = substr(isic3, 1, 3)) %>%
+        distinct(),
+      by = c("isic3")
+    )
+
+  # I need to convert those 1.23E4 to 1.23*10^4 and store a consistent value column
+
+  production_isic4 <- production_isic4 %>%
+    mutate(value = ifelse(value == "...", NA, value))
+
+  production_isic4 <- production_isic4 %>%
+    mutate(
+      ten_factor = case_when(
+        grepl("E", value) ~ TRUE,
+        TRUE ~ FALSE
+      )
+    )
+
+  production_isic4 <- production_isic4 %>%
+    mutate(
+      power = case_when(
+        ten_factor == TRUE ~ gsub(".*E", "", value),
+        TRUE ~  NA_character_
+      ),
+      value2 = case_when(
+        ten_factor == TRUE ~ as.numeric(gsub("E.*", "", value)) * 10^ten_factor,
+        TRUE ~  as.numeric(value)
+      )
+    )
+
+  production_isic4 <- production_isic4 %>%
+    group_by(year, country_description, industry_id) %>%
+    summarise(value2 = sum(value2, na.rm = T))
+
+  production_industry_id <- bind_rows(production_isic3, production_isic4)
+  rm(production_isic3, production_isic4)
+
+  dbWriteTable(con, "mining_energy_unido_production_raw", production_industry_id, overwrite = T)
 
   dbDisconnect(con, shutdown = T)
 }
