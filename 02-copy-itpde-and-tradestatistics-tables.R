@@ -1,5 +1,5 @@
 library(archive)
-library(readr)
+library(data.table)
 library(dplyr)
 library(tidyr)
 library(purrr)
@@ -25,9 +25,11 @@ if (!length(list.files(finp, pattern = "ITPD_E_R02\\.csv")) == 1) {
   archive_extract(zip, dir = finp)
 }
 
-if (!"usitc_trade" %in% dbListTables(con2)) {
+if (!"usitc_trade" %in% dbListTables(con)) {
   # this table is to compare replication values later
-  trade <- read_csv(paste0(finp, "/ITPD_E_R02.csv"))
+  trade <- fread(paste0(finp, "/ITPD_E_R02.csv"))
+
+  gc()
 
   # this table is to avoid writing special country codes that we won't need
   country_names <- trade %>%
