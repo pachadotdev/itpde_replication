@@ -32,7 +32,11 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     col_types = cols(
       year = col_integer(),
       industry_id = col_integer(),
-      trade = col_double()
+      trade = col_double(),
+      exporter_dynamic_code = col_skip(),
+      exporter_name = col_skip(),
+      importer_dynamic_code = col_skip(),
+      importer_name = col_skip()
     )
   )
 
@@ -69,6 +73,7 @@ if (!"usitc_trade" %in% dbListTables(con)) {
       industry_descr varchar(255) NULL
     )"
   )
+
   dbWriteTable(con, "usitc_country_codes", country_names)
 
   dbWriteTable(con, "usitc_industry_names", industry_names)
