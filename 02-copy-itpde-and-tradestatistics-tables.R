@@ -1,5 +1,5 @@
 library(archive)
-library(data.table)
+library(readr)
 library(dplyr)
 library(tidyr)
 library(purrr)
@@ -27,7 +27,14 @@ if (!length(list.files(finp, pattern = "ITPD_E_R02\\.csv")) == 1) {
 
 if (!"usitc_trade" %in% dbListTables(con)) {
   # this table is to compare replication values later
-  trade <- fread(paste0(finp, "/ITPD_E_R02.csv"))
+  trade <- read_csv(
+    paste0(finp, "/ITPD_E_R02.csv"),
+    col_types = cols(
+      year = col_integer(),
+      industry_id = col_integer(),
+      trade = col_double()
+    )
+  )
 
   gc()
 
@@ -48,6 +55,20 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     select(industry_id, industry_descr) %>%
     distinct()
 
+  dbSendQuery(
+    con,
+    "CREATE TABLE usitc_country_codes (
+	    country_iso3 bpchar(3) NULL
+    )"
+  )
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE usitc_industry_names (
+      industry_id int4 NULL,
+      industry_descr varchar(255) NULL
+    )"
+  )
   dbWriteTable(con, "usitc_country_codes", country_names)
 
   dbWriteTable(con, "usitc_industry_names", industry_names)
@@ -68,14 +89,35 @@ if (!"usitc_trade" %in% dbListTables(con)) {
 
   trade <- trade %>%
     bind_cols(sector_names_2) %>%
-    select(year, exporter_iso3, importer_iso3, broad_sector_id, broad_sector_id,
+    select(year, exporter_iso3, importer_iso3, broad_sector_id,
            industry_id, trade, flag_mirror, flag_zero)
+
+  trade <- trade %>%
+    mutate(
+      year = as.integer(year),
+      broad_sector_id = as.integer(broad_sector_id),
+      industry_id = as.integer(industry_id)
+    )
 
   trade <- trade %>%
     group_by(year) %>%
     nest()
 
   gc()
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE usitc_trade (
+    	year int4 NULL,
+    	exporter_iso3 bpbpchar(3) NULL,
+    	importer_iso3 bpchar(3) NULL,
+    	broad_sector_id int4 NULL,
+    	industry_id int4 NULL,
+    	trade float8 NULL,
+    	flag_mirror int4 NULL,
+    	flag_zero bpchar(1) NULL
+    )"
+  )
 
   map(
     1986:2020,
