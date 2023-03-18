@@ -114,7 +114,15 @@ if (!"usitc_isic3_to_itpde" %in% dbListTables(con)) {
     select(industry_id = itpd_id, isic3) %>%
     mutate_if(is.double, as.integer)
 
-  dbWriteTable(con, "usitc_isic3_to_itpde", isic3_to_itpde, overwrite = T)
+  dbSendQuery(
+    con,
+    "CREATE TABLE usitc_isic3_to_itpde (
+    	industry_id int4 NULL,
+    	isic3 char(4) NULL
+    )"
+  )
+
+  dbWriteTable(con, "usitc_isic3_to_itpde", isic3_to_itpde, overwrite = F, append = T)
 }
 
 if (!"wb_isic3_to_hs92" %in% dbListTables(con)) {
@@ -141,12 +149,55 @@ if (!"wb_isic3_to_hs92" %in% dbListTables(con)) {
   hs92_to_isic3 <- hs92_to_isic3 %>%
     left_join(isic3)
 
-  dbWriteTable(con, "wb_isic3_to_hs92", hs92_to_isic3, overwrite = T)
+  dbSendQuery(
+    con,
+    "CREATE TABLE wb_isic3_to_hs92 (
+    	hs92 char(6) NULL,
+    	isic3 char(4) NULL,
+    	isic3_industry_code char(3) NULL
+    )"
+  )
+
+  dbWriteTable(con, "wb_isic3_to_hs92", hs92_to_isic3, overwrite = F, append = T)
 }
 
 # Import raw trade data ----
 
-if (!"uncomtrade_imports" %in% dbListTables(con)) {
+a02 <- tbl(con, "wb_isic3_to_hs92") %>%
+  filter(isic3_industry_code %in% c("A02")) %>%
+  distinct(hs92) %>%
+  collect() %>%
+  pull()
+
+b05 <- tbl(con, "wb_isic3_to_hs92") %>%
+  filter(isic3_industry_code %in% c("B05")) %>%
+  distinct(hs92) %>%
+  collect() %>%
+  pull()
+
+if ("uncomtrade_imports" %in% dbListTables(con)) {
+  n_uncomtrade_imports <- tbl(con, "uncomtrade_imports") %>%
+    filter(commodity_code %in% c(a02, b05)) %>%
+    count() %>%
+    collect() %>%
+    pull() %>%
+    as.numeric()
+} else {
+  n_uncomtrade_imports <- 0
+}
+
+if ("uncomtrade_exports" %in% dbListTables(con)) {
+  n_uncomtrade_exports <- tbl(con, "uncomtrade_exports") %>%
+    filter(commodity_code %in% c(a02, b05)) %>%
+    count() %>%
+    collect() %>%
+    pull() %>%
+    as.numeric()
+} else {
+  n_uncomtrade_exports <- 0
+}
+
+if (n_uncomtrade_imports == 0) {
   con2 <- dbConnect(
     Postgres(),
     host = "localhost",
@@ -154,18 +205,6 @@ if (!"uncomtrade_imports" %in% dbListTables(con)) {
     user = Sys.getenv("LOCAL_SQL_USR"),
     password = Sys.getenv("LOCAL_SQL_PWD")
   )
-
-  a02 <- tbl(con, "wb_isic3_to_hs92") %>%
-    filter(isic3_industry_code %in% c("A02")) %>%
-    distinct(hs92) %>%
-    collect() %>%
-    pull()
-
-  b05 <- tbl(con, "wb_isic3_to_hs92") %>%
-    filter(isic3_industry_code %in% c("B05")) %>%
-    distinct(hs92) %>%
-    collect() %>%
-    pull()
 
   map(
     1988:2020,
@@ -182,12 +221,11 @@ if (!"uncomtrade_imports" %in% dbListTables(con)) {
     }
   )
 
-  rm(a02, b05)
   dbDisconnect(con2)
   rm(con2)
 }
 
-if (!"uncomtrade_exports" %in% dbListTables(con)) {
+if (n_uncomtrade_exports == 0) {
   con2 <- dbConnect(
     Postgres(),
     host = "localhost",
@@ -195,18 +233,6 @@ if (!"uncomtrade_exports" %in% dbListTables(con)) {
     user = Sys.getenv("LOCAL_SQL_USR"),
     password = Sys.getenv("LOCAL_SQL_PWD")
   )
-
-  a02 <- tbl(con, "wb_isic3_to_hs92") %>%
-    filter(isic3_industry_code %in% c("A02")) %>%
-    distinct(hs92) %>%
-    collect() %>%
-    pull()
-
-  b05 <- tbl(con, "wb_isic3_to_hs92") %>%
-    filter(isic3_industry_code %in% c("B05")) %>%
-    distinct(hs92) %>%
-    collect() %>%
-    pull()
 
   map(
     1988:2020,
@@ -223,23 +249,22 @@ if (!"uncomtrade_exports" %in% dbListTables(con)) {
     }
   )
 
-  rm(a02, b05)
   dbDisconnect(con2)
   rm(con2)
 }
 
 if (!"uncomtrade_trade" %in% dbListTables(con)) {
-  a02 <- tbl(con, "wb_isic3_to_hs92") %>%
-    filter(isic3_industry_code %in% c("A02")) %>%
-    distinct(hs92) %>%
-    collect() %>%
-    pull()
-
-  b05 <- tbl(con, "wb_isic3_to_hs92") %>%
-    filter(isic3_industry_code %in% c("B05")) %>%
-    distinct(hs92) %>%
-    collect() %>%
-    pull()
+  dbSendQuery(
+    con,
+    "CREATE TABLE uncomtrade_trade (
+    	year int4 NULL,
+    	importer_iso3 text NULL,
+    	exporter_iso3 text NULL,
+    	industry_id int4 NULL,
+    	import_value_usd float8 NULL,
+    	export_value_usd float8 NULL
+    )"
+  )
 
   map(
     1988:2020,
@@ -366,19 +391,22 @@ if (!"uncomtrade_trade" %in% dbListTables(con)) {
   )
 }
 
+rm(a02, b05)
+
 # Import raw production data ----
 
 if (!"undata_production" %in% dbListTables(con)) {
   d_prod <- read_csv(txt_production_isic4,
                        col_types = cols(`Sub Group` = col_character(),
-                                        Year = col_character(), Series = col_character(),
-                                        `SNA system` = col_character(), Value = col_character(),
+                                        Year = col_character(),
+                                        Series = col_character(),
+                                        `SNA system` = col_character(),
+                                        Value = col_character(),
                                         `Value Footnotes` = col_character()),
                        trim_ws = TRUE, n_max = 3477) %>%
     clean_names()
 
-  d_prod_footnotes <- read_csv(txt_production_isic4,
-                          trim_ws = TRUE, skip = 3478) %>%
+  d_prod_footnotes <- read_csv(txt_production_isic4, trim_ws = TRUE, skip = 3478) %>%
     clean_names()
 
   # unique(d_prod$sub_item)
@@ -392,7 +420,31 @@ if (!"undata_production" %in% dbListTables(con)) {
       value = as.double(value)
     )
 
+  d_prod <- d_prod %>%
+    select(-c(sna93_table_code, sub_group, item, sna93_item_code, series, sna_system, fiscal_year_type))
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE undata_production (
+    	country_or_area text NULL,
+    	sub_item text NULL,
+    	year int4 NULL,
+    	currency text NULL,
+    	value float8 NULL,
+    	value_footnotes text NULL
+    )"
+  )
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE undata_production_footnotes (
+    	footnote_seq_id int4 NULL,
+    	footnote text NULL
+    )"
+  )
+
   dbWriteTable(con, "undata_production", d_prod, append = T)
+
   dbWriteTable(con, "undata_production_footnotes", d_prod_footnotes, append = T)
 }
 
@@ -458,9 +510,18 @@ if (!"imf_exchange_rate" %in% dbListTables(con)) {
   exchange_rate <- exchange_rate %>%
     filter(attribute == "Value") %>%
     filter(indicator_name == "Exchange Rates, US Dollar per Domestic Currency, Period Average, Rate") %>%
-    select(-attribute, -indicator_name, -country_code, -indicator_code)
+    select(-attribute, -indicator_name, -country_code, -indicator_code, -base_year)
 
-  dbWriteTable(con, "imf_exchange_rate", exchange_rate, overwrite = T)
+  dbSendQuery(
+    con,
+    "CREATE TABLE imf_exchange_rate (
+    	year int4 NULL,
+    	country_name text NULL,
+    	value float8 NULL
+    )"
+  )
+
+  dbWriteTable(con, "imf_exchange_rate", exchange_rate, overwrite = F, append = T)
 }
 
 # Import country names ----
@@ -480,6 +541,11 @@ if (!"uncomtrade_country_codes" %in% dbListTables(con)) {
       message(y)
       tbl(con2, "hs_rev1992_tf_import_al_6") %>%
         filter(year == y) %>%
+        left_join(
+          tbl(con2, "hs_rev1992_countries") %>%
+            select(reporter_iso = country_iso, reporter_code = country_code,
+                   reporter = country)
+        ) %>%
         select(reporter_iso, reporter_code, reporter) %>%
         distinct() %>%
         collect()
@@ -500,7 +566,16 @@ if (!"uncomtrade_country_codes" %in% dbListTables(con)) {
 
   gc()
 
-  dbWriteTable(con, "uncomtrade_country_codes", d_iso_codes, overwrite = T)
+  dbSendQuery(
+    con,
+    "CREATE TABLE uncomtrade_country_codes (
+    	country_iso3 text NULL,
+    	country_id int4 NULL,
+    	country text NULL
+    )"
+  )
+
+  dbWriteTable(con, "uncomtrade_country_codes", d_iso_codes, overwrite = F, append = T)
 
   dbDisconnect(con2)
 }
@@ -736,7 +811,19 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
 
   rm(d_prod)
 
-  dbWriteTable(con, "uncomtrade_trade_tidy", d_trade, overwrite = T)
+  dbSendQuery(
+    con,
+    "CREATE TABLE public.uncomtrade_trade_tidy (
+    	year int4 NULL,
+    	exporter_iso3 text NULL,
+    	importer_iso3 text NULL,
+    	industry_id int4 NULL,
+    	trade float8 NULL,
+    	trade_flag_code int4 NULL
+    )"
+  )
+
+  dbWriteTable(con, "uncomtrade_trade_tidy", d_trade, overwrite = F, append = T)
 }
 
 dbDisconnect(con)

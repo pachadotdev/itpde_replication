@@ -121,8 +121,24 @@ if (!"fao_trade" %in% dbListTables(con)) {
 
   gc()
 
-  dbWriteTable(con, "fao_trade_element_code", fao_element_code, overwrite = T)
-  dbWriteTable(con, "fao_trade_unit_code", fao_unit_code, overwrite = T)
+  dbSendQuery(
+    con,
+    "CREATE TABLE fao_trade_element_code (
+    	element_code int4 NULL,
+    	element text NULL
+    )"
+  )
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE fao_trade_unit_code (
+    	unit text NULL,
+    	unit_code int4 NULL
+    )"
+  )
+
+  dbWriteTable(con, "fao_trade_element_code", fao_element_code, overwrite = F, append = T)
+  dbWriteTable(con, "fao_trade_unit_code", fao_unit_code, overwrite = F, append = T)
 
   fao_trade <- fao_trade %>%
     ungroup() %>%
@@ -135,6 +151,19 @@ if (!"fao_trade" %in% dbListTables(con)) {
 
   gc()
 
+  dbSendQuery(
+    con,
+    "CREATE TABLE fao_trade (
+    	reporter_country_code int4 NULL,
+    	partner_country_code int4 NULL,
+    	item_code int4 NULL,
+    	element_code int4 NULL,
+    	unit_code int4 NULL,
+    	year int4 NULL,
+    	value float8 NULL
+    )"
+  )
+
   map(
     seq_along(fao_trade),
     function(x) {
@@ -145,6 +174,94 @@ if (!"fao_trade" %in% dbListTables(con)) {
 
   rm(fao_trade, fao_element_code, fao_unit_code)
   gc()
+}
+
+if (!"uncomtrade_imports" %in% dbListTables(con)) {
+  con2 <- dbConnect(
+    Postgres(),
+    host = "localhost",
+    dbname = "uncomtrade_commodities",
+    user = Sys.getenv("LOCAL_SQL_USR"),
+    password = Sys.getenv("LOCAL_SQL_PWD")
+  )
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE uncomtrade_imports (
+    	year int4 NULL,
+    	reporter_iso text NULL,
+    	partner_iso text NULL,
+    	reporter_code int4 NULL,
+    	partner_code int4 NULL,
+    	commodity_code text NULL,
+    	qty_unit_code int4 NULL,
+    	qty float8 NULL,
+    	netweight_kg float8 NULL,
+    	trade_value_usd float8 NULL
+    )"
+  )
+
+  map(
+    1988:2020,
+    function(y) {
+      message(y)
+
+      d <- tbl(con2, "hs_rev1992_tf_import_al_6") %>%
+        filter(year == y) %>%
+        filter(!(partner_iso %in% c("all","wld"))) %>%
+        filter(commodity_code == "100610") %>%
+        collect()
+
+      dbWriteTable(con, "uncomtrade_imports", d, append = T)
+    }
+  )
+
+  dbDisconnect(con2)
+  rm(con2)
+}
+
+if (!"uncomtrade_exports" %in% dbListTables(con)) {
+  con2 <- dbConnect(
+    Postgres(),
+    host = "localhost",
+    dbname = "uncomtrade_commodities",
+    user = Sys.getenv("LOCAL_SQL_USR"),
+    password = Sys.getenv("LOCAL_SQL_PWD")
+  )
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE uncomtrade_exports (
+    	year int4 NULL,
+    	reporter_iso text NULL,
+    	partner_iso text NULL,
+    	reporter_code int4 NULL,
+    	partner_code int4 NULL,
+    	commodity_code text NULL,
+    	qty_unit_code int4 NULL,
+    	qty float8 NULL,
+    	netweight_kg float8 NULL,
+    	trade_value_usd float8 NULL
+    )"
+  )
+
+  map(
+    1988:2020,
+    function(y) {
+      message(y)
+
+      d <- tbl(con2, "hs_rev1992_tf_export_al_6") %>%
+        filter(year == y) %>%
+        filter(!(partner_iso %in% c("all","wld"))) %>%
+        filter(commodity_code == "100610") %>%
+        collect()
+
+      dbWriteTable(con, "uncomtrade_exports", d, append = T)
+    }
+  )
+
+  dbDisconnect(con2)
+  rm(con2)
 }
 
 # Import raw production data ----
@@ -171,8 +288,28 @@ if (!"fao_production_matrix" %in% dbListTables(con)) {
     left_join(fao_unit_code) %>%
     select(area_code:item_code, unit_code, year, value)
 
-  dbWriteTable(con, "fao_production_matrix", fao_production, overwrite = T)
-  dbWriteTable(con, "fao_production_matrix_unit_code", fao_unit_code, overwrite = T)
+  dbSendQuery(
+    con,
+    "CREATE TABLE fao_production_matrix (
+    	area_code int4 NULL,
+    	item_code int4 NULL,
+    	unit_code int4 NULL,
+    	year int4 NULL,
+    	value float8 NULL
+    )"
+  )
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE fao_production_matrix_unit_code (
+    	unit text NULL,
+    	unit_code int4 NULL
+    )"
+  )
+
+  dbWriteTable(con, "fao_production_matrix", fao_production, overwrite = F, append = T)
+
+  dbWriteTable(con, "fao_production_matrix_unit_code", fao_unit_code, overwrite = F, append = T)
 
   rm(fao_production, fao_unit_code)
   gc()
@@ -189,7 +326,20 @@ if (!"fao_country_correspondence" %in% dbListTables(con)) {
   fao_country_correspondence <- read_csv("inp/faostat_country_correspondence.csv") %>%
     clean_names()
 
-  dbWriteTable(con, "fao_country_correspondence", fao_country_correspondence, overwrite = T)
+  dbSendQuery(
+    con,
+    "CREATE TABLE fao_country_correspondence (
+    	country_code int4 NULL,
+    	country text NULL,
+    	m49_code text NULL,
+    	iso2_code text NULL,
+    	iso3_code text NULL,
+    	start_year float8 NULL,
+    	end_year float8 NULL
+    )"
+  )
+
+  dbWriteTable(con, "fao_country_correspondence", fao_country_correspondence, overwrite = F, append = T)
 
   rm(fao_country_correspondence)
 }
@@ -205,6 +355,29 @@ if (!"usitc_fao_to_itpde" %in% dbListTables(con)) {
 
 if (!"fao_trade_tidy" %in% dbListTables(con)) {
   # Tidy trade data ----
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE fao_trade_tidy (
+    	year int4 NULL,
+    	exporter_iso3 text NULL,
+    	importer_iso3 text NULL,
+    	industry_id int4 NULL,
+    	export_value_usd float8 NULL,
+    	import_value_usd float8 NULL,
+    	production_value_usd float8 NULL,
+    	trade float8 NULL,
+    	trade_flag_code int4 NULL
+    )"
+  )
+
+  dbSendQuery(
+    con,
+    "CREATE TABLE fao_trade_tidy_flag_code (
+    	trade_flag_code int4 NULL,
+    	trade_flag text NULL
+    )"
+  )
 
   message("==== TRADE ====")
 
@@ -288,6 +461,108 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
           import_value_usd = sum(import_value_usd, na.rm = T),
           export_value_usd = sum(export_value_usd, na.rm = T)
         )
+
+      ## Add rice paddy from UN COMTRADE ----
+
+      # industry id "2" is item code "27"
+
+      d_aux_imp <- tbl(con, "uncomtrade_imports") %>%
+        filter(
+          year == y,
+          commodity_code == "100610"
+        ) %>%
+        select(year, reporter_code, reporter_iso3 = reporter_iso,
+               partner_code, partner_iso3 = partner_iso,
+               import_value_usd = trade_value_usd) %>%
+        mutate(industry_id = 2L) %>%
+        mutate(
+          reporter_iso3 = toupper(case_when(
+            reporter_code == 490L ~ "twn",
+            reporter_iso3 %in% c("drc", "zar") ~ "cod",
+            reporter_iso3 == "rom" ~ "rou",
+            TRUE ~ reporter_iso3
+          )),
+          partner_iso3 = toupper(case_when(
+            partner_code == 490L ~ "twn",
+            partner_iso3 %in% c("drc", "zar") ~ "cod",
+            partner_iso3 == "rom" ~ "rou",
+            TRUE ~ partner_iso3
+          ))
+        ) %>%
+        select(-reporter_code, -partner_code) %>%
+        collect() %>%
+        inner_join(
+          tbl(con, "usitc_country_codes") %>%
+            collect() %>%
+            distinct() %>%
+            rename(reporter_iso3 = country_iso3)
+        ) %>%
+        inner_join(
+          tbl(con, "usitc_country_codes") %>%
+            collect() %>%
+            distinct() %>%
+            rename(partner_iso3 = country_iso3)
+        )
+
+      d_aux_exp <- tbl(con, "uncomtrade_exports") %>%
+        filter(
+          year == y,
+          commodity_code == "100610"
+        ) %>%
+        select(year, reporter_code, reporter_iso3 = reporter_iso,
+               partner_code, partner_iso3 = partner_iso,
+               export_value_usd = trade_value_usd) %>%
+        mutate(industry_id = 2L) %>%
+        mutate(
+          reporter_iso3 = toupper(case_when(
+            reporter_code == 490L ~ "twn",
+            reporter_iso3 %in% c("drc", "zar") ~ "cod",
+            reporter_iso3 == "rom" ~ "rou",
+            TRUE ~ reporter_iso3
+          )),
+          partner_iso3 = toupper(case_when(
+            partner_code == 490L ~ "twn",
+            partner_iso3 %in% c("drc", "zar") ~ "cod",
+            partner_iso3 == "rom" ~ "rou",
+            TRUE ~ partner_iso3
+          ))
+        ) %>%
+        select(-reporter_code, -partner_code) %>%
+        collect() %>%
+        inner_join(
+          tbl(con, "usitc_country_codes") %>%
+            collect() %>%
+            distinct() %>%
+            rename(reporter_iso3 = country_iso3)
+        ) %>%
+        inner_join(
+          tbl(con, "usitc_country_codes") %>%
+            collect() %>%
+            distinct() %>%
+            rename(partner_iso3 = country_iso3)
+        )
+
+      d_aux <- d_aux_imp %>%
+        full_join(
+          d_aux_exp, by = c("year",
+            "reporter_iso3" = "partner_iso3",
+            "partner_iso3" = "reporter_iso3",
+            "industry_id")
+        ) %>%
+        group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
+        summarise_if(is.numeric, sum, na.rm = T) %>%
+        mutate(trade = import_value_usd + export_value_usd) %>%
+        filter(trade > 0) %>%
+        select(-trade)
+
+      rm(d_aux_imp, d_aux_exp)
+
+      d <- d %>%
+        bind_rows(d_aux) %>%
+        group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
+        summarise_if(is.numeric, sum, na.rm = T)
+
+      rm(d_aux)
 
       ## Add mirrored flows and flags ----
 
@@ -383,7 +658,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
     ) %>%
 
     # here we select values in standard local currency
-    select(year, producer_iso3, item_code, production_usd = current_us)
+    select(year, producer_iso3, item_code, production_value_usd = current_us)
 
   ## Convert FCL to ITPD-E, filter and aggregate ----
 
@@ -405,35 +680,38 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
   fao_production <- fao_production %>%
     rename(exporter_iso3 = producer_iso3) %>%
     mutate(importer_iso3 = exporter_iso3) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, production_usd) %>%
+    select(year, exporter_iso3, importer_iso3, industry_id, production_value_usd) %>%
     inner_join(
       tbl(con, "fao_trade_tidy") %>%
         # remove domestic trade before substracting from production
         filter(exporter_iso3 != importer_iso3) %>%
         group_by(year, exporter_iso3, industry_id) %>%
-        summarise(total_exports = sum(trade, na.rm = T)) %>%
+        summarise(export_value_usd = sum(trade, na.rm = T)) %>%
         collect()
     ) %>%
     mutate(
       trade_flag_code = case_when(
-        is.na(production_usd) ~ 4L # 4 means production = NA
+        is.na(production_value_usd) ~ 4L # 4 means production = NA
       ),
-      production_usd = case_when(
-        is.na(production_usd) ~ 0,
-        TRUE ~ production_usd
+      production_value_usd = case_when(
+        is.na(production_value_usd) ~ 0,
+        TRUE ~ production_value_usd
       ),
 
       trade_flag_code = case_when(
-        trade_flag_code == 4L & is.na(total_exports) ~ 5L, # 5 means exports = NA and production = NA
-        trade_flag_code == 4L & !is.na(total_exports) ~ 6L, # 6 means exports = NA and production != NA"
+        trade_flag_code == 4L & is.na(export_value_usd) ~ 5L, # 5 means exports = NA and production = NA
+        trade_flag_code == 4L & !is.na(export_value_usd) ~ 6L, # 6 means exports = NA and production != NA"
         TRUE ~ trade_flag_code
       ),
-      total_exports = case_when(
-        is.na(total_exports) ~ 0,
-        TRUE ~ total_exports
+      export_value_usd = case_when(
+        is.na(export_value_usd) ~ 0,
+        TRUE ~ export_value_usd
       ),
 
-      trade = production_usd - total_exports,
+      # trade in million
+      production_value_usd = production_value_usd / 1000000,
+      trade = production_value_usd - export_value_usd,
+
       trade_flag_code = case_when(
         trade < 0 ~ 7L, # 7 means production - trade < 0
         TRUE ~ trade_flag_code
@@ -442,12 +720,9 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         trade < 0 ~ 0,
         TRUE ~ trade
       )
-    ) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
+    )
 
-  # trade in million
-  fao_production <- fao_production %>%
-    mutate(trade = trade / 1000000)
+  dbWriteTable(con, "fao_trade_tidy", fao_production, append = T, overwrite = F)
 
   # add table with flags
   fao_trade_tidy_flag_code <- tibble(
@@ -462,10 +737,9 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       "production - trade < 0")
   )
 
-  dbSendQuery(con, "delete from fao_trade_tidy where exporter_iso3 = importer_iso3")
+  # dbSendQuery(con, "delete from fao_trade_tidy where exporter_iso3 = importer_iso3")
 
-  dbWriteTable(con, "fao_trade_tidy", fao_production, append = T, overwrite = F)
-  dbWriteTable(con, "fao_trade_tidy_flag_code", fao_trade_tidy_flag_code, append = F, overwrite = T)
+  dbWriteTable(con, "fao_trade_tidy_flag_code", fao_trade_tidy_flag_code, append = T, overwrite = F)
   gc()
 }
 

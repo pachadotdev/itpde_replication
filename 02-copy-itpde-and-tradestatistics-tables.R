@@ -26,21 +26,33 @@ if (!length(list.files(finp, pattern = "ITPD_E_R02\\.csv")) == 1) {
 }
 
 if (!"usitc_trade" %in% dbListTables(con)) {
-  # this table is to compare replication values later
-  trade <- read_csv(
-    paste0(finp, "/ITPD_E_R02.csv"),
-    col_types = cols(
-      year = col_integer(),
-      industry_id = col_integer(),
-      trade = col_double(),
-      exporter_dynamic_code = col_skip(),
-      exporter_name = col_skip(),
-      importer_dynamic_code = col_skip(),
-      importer_name = col_skip()
-    )
-  )
 
-  gc()
+  if (!file.exists(paste0(finp, "/ITPD_E_R02.rds"))) {
+    # this table is to compare replication values later
+    # this file is super heavy and takes a lot of time to read, it crashed pandas :(
+    trade <- read_csv(
+      paste0(finp, "/ITPD_E_R02.csv"),
+      col_types = cols(
+        year = col_integer(),
+        industry_id = col_integer(),
+        trade = col_double(),
+        exporter_dynamic_code = col_skip(),
+        exporter_name = col_skip(),
+        importer_dynamic_code = col_skip(),
+        importer_name = col_skip()
+      )
+    )
+
+    gc()
+
+    saveRDS(trade, paste0(finp, "/ITPD_E_R02.rds"))
+
+    try(file.remove(paste0(finp, "/ITPD_E_R02.csv")))
+
+    gc()
+  } else {
+    trade <- readRDS(paste0(finp, "/ITPD_E_R02.rds"))
+  }
 
   # this table is to avoid writing special country codes that we won't need
   country_names <- trade %>%
@@ -62,7 +74,7 @@ if (!"usitc_trade" %in% dbListTables(con)) {
   dbSendQuery(
     con,
     "CREATE TABLE usitc_country_codes (
-	    country_iso3 bpchar(3) NULL
+	    country_iso3 text NULL
     )"
   )
 
@@ -70,13 +82,13 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     con,
     "CREATE TABLE usitc_industry_names (
       industry_id int4 NULL,
-      industry_descr varchar(255) NULL
+      industry_descr text NULL
     )"
   )
 
-  dbWriteTable(con, "usitc_country_codes", country_names)
+  dbWriteTable(con, "usitc_country_codes", country_names, append = T)
 
-  dbWriteTable(con, "usitc_industry_names", industry_names)
+  dbWriteTable(con, "usitc_industry_names", industry_names, append = T)
 
   sector_names <- trade %>%
     select(broad_sector) %>%
@@ -114,13 +126,13 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     con,
     "CREATE TABLE usitc_trade (
     	year int4 NULL,
-    	exporter_iso3 bpbpchar(3) NULL,
-    	importer_iso3 bpchar(3) NULL,
+    	exporter_iso3 text NULL,
+    	importer_iso3 text NULL,
     	broad_sector_id int4 NULL,
     	industry_id int4 NULL,
     	trade float8 NULL,
     	flag_mirror int4 NULL,
-    	flag_zero bpchar(1) NULL
+    	flag_zero text NULL
     )"
   )
 
