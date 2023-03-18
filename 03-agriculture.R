@@ -206,11 +206,19 @@ if (!"uncomtrade_imports" %in% dbListTables(con)) {
     function(y) {
       message(y)
 
-      d <- tbl(con2, "hs_rev1992_tf_import_al_6") %>%
-        filter(year == y) %>%
-        filter(!(partner_iso %in% c("all","wld"))) %>%
-        filter(commodity_code == "100610") %>%
-        collect()
+      if (y < 1988) {
+        d <- tbl(con2, "sitc_rev2_tf_import_al_6") %>%
+          filter(year == y) %>%
+          filter(!(partner_iso %in% c("all","wld"))) %>%
+          filter(commodity_code == "04211") %>%
+          collect()
+      } else {
+        d <- tbl(con2, "hs_rev1992_tf_import_al_6") %>%
+          filter(year == y) %>%
+          filter(!(partner_iso %in% c("all","wld"))) %>%
+          filter(commodity_code == "100610") %>%
+          collect()
+      }
 
       dbWriteTable(con, "uncomtrade_imports", d, append = T)
     }
@@ -250,11 +258,19 @@ if (!"uncomtrade_exports" %in% dbListTables(con)) {
     function(y) {
       message(y)
 
-      d <- tbl(con2, "hs_rev1992_tf_export_al_6") %>%
-        filter(year == y) %>%
-        filter(!(partner_iso %in% c("all","wld"))) %>%
-        filter(commodity_code == "100610") %>%
-        collect()
+      if (y < 1988) {
+        d <- tbl(con2, "sitc_rev2_tf_export_al_6") %>%
+          filter(year == y) %>%
+          filter(!(partner_iso %in% c("all","wld"))) %>%
+          filter(commodity_code == "04211") %>%
+          collect()
+      } else {
+        d <- tbl(con2, "hs_rev1992_tf_export_al_6") %>%
+          filter(year == y) %>%
+          filter(!(partner_iso %in% c("all","wld"))) %>%
+          filter(commodity_code == "100610") %>%
+          collect()
+      }
 
       dbWriteTable(con, "uncomtrade_exports", d, append = T)
     }
@@ -466,10 +482,12 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
       # industry id "2" is item code "27"
 
+      cmty_cd <- ifelse(y < 1988, "04211", "100610")
+
       d_aux_imp <- tbl(con, "uncomtrade_imports") %>%
         filter(
           year == y,
-          commodity_code == "100610"
+          commodity_code == cmty_cd
         ) %>%
         select(year, reporter_code, reporter_iso3 = reporter_iso,
                partner_code, partner_iso3 = partner_iso,
@@ -507,7 +525,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       d_aux_exp <- tbl(con, "uncomtrade_exports") %>%
         filter(
           year == y,
-          commodity_code == "100610"
+          commodity_code == cmty_cd
         ) %>%
         select(year, reporter_code, reporter_iso3 = reporter_iso,
                partner_code, partner_iso3 = partner_iso,
