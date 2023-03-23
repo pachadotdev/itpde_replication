@@ -585,217 +585,245 @@ if (!"uncomtrade_country_codes" %in% dbListTables(con)) {
 if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
   ## Trade data ----
 
-  d_trade <- tbl(con, "uncomtrade_trade") %>%
-    select(year, importer_iso3, exporter_iso3,
-           industry_id, import_value_usd, export_value_usd) %>%
-    group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
-    summarise(
-      import_value_usd = sum(import_value_usd, na.rm = T),
-      export_value_usd = sum(export_value_usd, na.rm = T)
-    ) %>%
-    collect()
+  d_trade <- map_df(
+    1986L:2020L,
+    function(y) {
 
-  d_trade <- d_trade %>%
-    arrange(exporter_iso3, year)
+      d <- tbl(con, "uncomtrade_trade") %>%
+        filter(year == y) %>%
+        select(year, importer_iso3, exporter_iso3,
+               industry_id, import_value_usd, export_value_usd) %>%
+        group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
+        summarise(
+          import_value_usd = sum(import_value_usd, na.rm = T),
+          export_value_usd = sum(export_value_usd, na.rm = T)
+        ) %>%
+        collect()
 
-  d_trade <- d_trade %>%
-    mutate(
-      import_value_usd = import_value_usd / 1000000,
-      export_value_usd = export_value_usd / 1000000
-    )
+      d <- d %>%
+        arrange(exporter_iso3, year)
 
-  d_trade %>%
-    filter(is.na(import_value_usd))
+      d <- d %>%
+        mutate(
+          import_value_usd = import_value_usd / 1000000,
+          export_value_usd = export_value_usd / 1000000
+        )
 
-  d_trade %>%
-    filter(is.na(export_value_usd))
+      # d %>%
+      #   filter(is.na(import_value_usd))
+      #
+      # d %>%
+      #   filter(is.na(export_value_usd))
 
-  d_trade <- d_trade %>%
-    # mutate_if(is.double, function(x) ifelse(is.na(x), 0, x)) %>%
-    mutate(
-      trade = case_when(
-        import_value_usd == 0 ~ export_value_usd,
-        TRUE ~ import_value_usd
-      ),
-      trade_flag_code = case_when(
-        is.na(trade) ~ 1L, # 1 means trade = NA
-        import_value_usd == 0 ~ 2L, # 2 means trade = exports
-        import_value_usd > 0 ~ 3L # 3 means trade = imports
-      ),
-      trade = case_when(
-        is.na(trade) ~ 0,
-        TRUE ~ trade
-      )
-    )
+      d <- d %>%
+        # mutate_if(is.double, function(x) ifelse(is.na(x), 0, x)) %>%
+        mutate(
+          trade = case_when(
+            import_value_usd == 0 ~ export_value_usd,
+            TRUE ~ import_value_usd
+          ),
+          trade_flag_code = case_when(
+            is.na(trade) ~ 1L, # 1 means trade = NA
+            import_value_usd == 0 ~ 2L, # 2 means trade = exports
+            import_value_usd > 0 ~ 3L # 3 means trade = imports
+          ),
+          trade = case_when(
+            is.na(trade) ~ 0,
+            TRUE ~ trade
+          )
+        )
 
-  d_trade <- d_trade %>%
-    select(-import_value_usd, -export_value_usd)
+      d <- d %>%
+        select(-import_value_usd, -export_value_usd)
+
+      return(d)
+    }
+  )
 
   ## Production -----
 
-  ### Get raw production in local currencies ----
+  d_prod <- map_df(
+    1986L:2020L,
+    function(y) {
+      ### Get raw production in local currencies ----
 
-  d_prod <- tbl(con, "undata_production") %>%
-    filter(year %in% 1986L:2020) %>%
-    select(year, country = country_or_area, sub_item, currency, production_local_currency = value) %>%
-    mutate(country = toupper(country)) %>%
-    left_join(
-      tbl(con, "uncomtrade_country_codes")
-    ) %>%
-    collect()
+      d <- tbl(con, "undata_production") %>%
+        filter(year == y) %>%
+        select(year, country = country_or_area, sub_item, currency, production_local_currency = value) %>%
+        mutate(country = toupper(country)) %>%
+        left_join(
+          tbl(con, "uncomtrade_country_codes")
+        ) %>%
+        collect()
 
-  ### Fix ISO-3 codes ----
+      ### Fix ISO-3 codes ----
 
-  d_prod <- d_prod %>%
-    mutate(
-      country_iso3 = case_when(
-        # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
-        country == "BOSNIA AND HERZEGOVINA" ~ "BIH",
-        country == "BRITISH VIRGIN ISLANDS" ~ "VGB",
-        country == "CAYMAN ISLANDS" ~ "CYM",
-        country == "CHINA, HONG KONG SPECIAL ADMINISTRATIVE REGION" ~ "HKG",
-        country == "CURAÇAO" ~ "CUW",
-        country == "DOMINICAN REPUBLIC" ~ "DOM",
-        country == "FAROE ISLANDS" ~ "FRO",
-        country == "FRANCE" ~ "FRA",
-        country == "INDIA" ~ "IND",
-        country == "IRAN (ISLAMIC REPUBLIC OF)" ~ "IRN",
-        country == "ITALY" ~ "IND",
-        country == "LIECHTENSTEIN" ~ "LIE",
-        country == "NORWAY" ~ "NOR",
-        country == "REPUBLIC OF KOREA" ~ "KOR",
-        country == "REPUBLIC OF MOLDOVA" ~ "MDA",
-        country == "SAN MARINO" ~ "SMR",
-        country == "SINT MAARTEN" ~ "SXM",
-        country == "SOUTH SUDAN" ~ "SSD",
-        country == "TANZANIA - MAINLAND" ~ "TZA",
-        country == "UNITED STATES" ~ "USA",
-        country == "ZANZIBAR" ~ "EAZ",
-        TRUE ~ country_iso3
-      )
-    )
-
-  d_prod %>%
-    filter(is.na(country_iso3)) %>%
-    select(country, country_iso3) %>%
-    distinct()
-
-  # A02 ISIC 4 = ITPDE INDUSTRY 27
-  # A03 ISIC 4 = ITPDE INDUSTRY 28
-
-  ### Add industry ID -----
-
-  d_prod <- d_prod %>%
-    mutate(
-      industry_id = case_when(
-        sub_item == "Forestry and logging (02)" ~ 27L,
-        sub_item == "Fishing and aquaculture (03)" ~ 28L
-      )
-    ) %>%
-    select(year, country_iso3, industry_id, production_local_currency)
-
-  d_prod %>%
-    filter(is.na(industry_id))
-
-  ### Local currency in million ----
-
-  d_prod <- d_prod %>%
-    arrange(country_iso3, year)
-
-  d_prod <- d_prod %>%
-    rename(exporter_iso3 = country_iso3) %>%
-    mutate(
-      importer_iso3 = exporter_iso3,
-      production_local_currency = production_local_currency / 1000000
-    ) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, production_local_currency)
-
-  ### Convert to USD ----
-
-  d_prod <- d_prod %>%
-    inner_join(
-      tbl(con, "imf_exchange_rate") %>%
-        select(year, country_name, value) %>%
+      d <- d %>%
         mutate(
-          country_name = toupper(country_name),
-          country_name = str_replace(country_name, ", ISLAMIC REP. OF|, REP.*|, UNITED .*|, KINGDOM .*|, THE|, UNION .*|, ARAB .*", ""),
-          country_name = case_when(
-            country_name == "BOLIVIA" ~ "BOLIVIA (PLURINATIONAL STATE OF)",
-            country_name == "BOSNIA AND HERZEGOVINA" ~ "BOSNIA HERZEGOVINA",
-            country_name == "CHINA, P.R.: MAINLAND" ~ "CHINA",
-            country_name == "CHINA, P.R.: HONG KONG" ~ "CHINA, HONG KONG SAR",
-            country_name == "CHINA, P.R.: MACAO" ~ "CHINA, MACAO SAR",
-            country_name == "CONGO, DEM. REP. OF THE" ~ "DEM. REP. OF THE CONGO",
-            country_name == "CZECH REP." ~ "CZECHIA",
-            country_name == "ERITREA STATE OF" ~ "ERITREA",
-            country_name == "ETHIOPIA FEDERAL DEM. REP. OF" ~ "ETHIOPIA",
-            country_name == "FAROE ISLANDS" ~ "FAEROE ISDS",
-            country_name == "SLOVAK REP." ~ "SLOVAKIA",
-            country_name == "UNITED STATES" ~ "USA",
-            TRUE ~ country_name
+          country_iso3 = case_when(
+            # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-3
+            country == "BOSNIA AND HERZEGOVINA" ~ "BIH",
+            country == "BRITISH VIRGIN ISLANDS" ~ "VGB",
+            country == "CAYMAN ISLANDS" ~ "CYM",
+            country == "CHINA, HONG KONG SPECIAL ADMINISTRATIVE REGION" ~ "HKG",
+            country == "CURAÇAO" ~ "CUW",
+            country == "DOMINICAN REPUBLIC" ~ "DOM",
+            country == "FAROE ISLANDS" ~ "FRO",
+            country == "FRANCE" ~ "FRA",
+            country == "INDIA" ~ "IND",
+            country == "IRAN (ISLAMIC REPUBLIC OF)" ~ "IRN",
+            country == "ITALY" ~ "IND",
+            country == "LIECHTENSTEIN" ~ "LIE",
+            country == "NORWAY" ~ "NOR",
+            country == "REPUBLIC OF KOREA" ~ "KOR",
+            country == "REPUBLIC OF MOLDOVA" ~ "MDA",
+            country == "SAN MARINO" ~ "SMR",
+            country == "SINT MAARTEN" ~ "SXM",
+            country == "SOUTH SUDAN" ~ "SSD",
+            country == "TANZANIA - MAINLAND" ~ "TZA",
+            country == "UNITED STATES" ~ "USA",
+            country == "ZANZIBAR" ~ "EAZ",
+            TRUE ~ country_iso3
+          )
+        )
+
+      # d %>%
+      #   filter(is.na(country_iso3)) %>%
+      #   select(country, country_iso3) %>%
+      #   distinct()
+
+      # A02 ISIC 4 = ITPDE INDUSTRY 27
+      # A03 ISIC 4 = ITPDE INDUSTRY 28
+
+      ### Add industry ID -----
+
+      d <- d %>%
+        mutate(
+          industry_id = case_when(
+            sub_item == "Forestry and logging (02)" ~ 27L,
+            sub_item == "Fishing and aquaculture (03)" ~ 28L
           )
         ) %>%
+        select(year, country_iso3, industry_id, currency, production_local_currency)
+
+      # d %>%
+      #   filter(is.na(industry_id))
+
+      ### Arrange exporter/importer ----
+
+      d <- d %>%
+        arrange(country_iso3, year)
+
+      d <- d %>%
+        rename(exporter_iso3 = country_iso3) %>%
+        mutate(importer_iso3 = exporter_iso3) %>%
+        select(year, exporter_iso3, importer_iso3, industry_id, currency, production_local_currency)
+
+      ### Convert to USD ----
+
+      d <- d %>%
         inner_join(
-          tbl(con, "uncomtrade_country_codes") %>%
-            select(country, country_iso3),
-          by = c("country_name" = "country")
+          tbl(con, "imf_exchange_rate") %>%
+            select(year, country_name, value) %>%
+            mutate(
+              country_name = toupper(country_name),
+              country_name = str_replace(country_name, ", ISLAMIC REP. OF|, REP.*|, UNITED .*|, KINGDOM .*|, THE|, UNION .*|, ARAB .*", ""),
+              country_name = case_when(
+                country_name == "BOLIVIA" ~ "BOLIVIA (PLURINATIONAL STATE OF)",
+                country_name == "BOSNIA AND HERZEGOVINA" ~ "BOSNIA HERZEGOVINA",
+                country_name == "CHINA, P.R.: MAINLAND" ~ "CHINA",
+                country_name == "CHINA, P.R.: HONG KONG" ~ "CHINA, HONG KONG SAR",
+                country_name == "CHINA, P.R.: MACAO" ~ "CHINA, MACAO SAR",
+                country_name == "CONGO, DEM. REP. OF THE" ~ "DEM. REP. OF THE CONGO",
+                country_name == "CZECH REP." ~ "CZECHIA",
+                country_name == "ERITREA STATE OF" ~ "ERITREA",
+                country_name == "ETHIOPIA FEDERAL DEM. REP. OF" ~ "ETHIOPIA",
+                country_name == "FAROE ISLANDS" ~ "FAEROE ISDS",
+                country_name == "SLOVAK REP." ~ "SLOVAKIA",
+                country_name == "UNITED STATES" ~ "USA",
+                TRUE ~ country_name
+              )
+            ) %>%
+            inner_join(
+              tbl(con, "uncomtrade_country_codes") %>%
+                select(country, country_iso3),
+              by = c("country_name" = "country")
+            ) %>%
+            collect(),
+          by = c("year", "exporter_iso3" = "country_iso3")
+        )
+
+      # fix Euro area missing values
+      euro_value <- tbl(con, "imf_exchange_rate") %>%
+        filter(year == y, country_name == "Euro Area") %>%
+        pull(value)
+
+      d <- d %>%
+        mutate(
+          value = case_when(
+            currency == "Euro" ~ euro_value,
+            TRUE ~ value
+          )
+        )
+
+      # d %>%
+      #   filter(is.na(value)) %>%
+      #   distinct(exporter_iso3, country_name)
+
+      d <- d %>%
+        select(-country_name) %>%
+        drop_na(value)
+
+      # express production in million
+
+      d <- d %>%
+        mutate(production_usd = production_local_currency * value / 1000000) %>%
+        select(-value)
+
+      ### Join with trade ---
+
+      d <- d %>%
+        full_join(
+          d_trade %>%
+            # remove domestic trade before substracting from production
+            filter(exporter_iso3 != importer_iso3) %>%
+            group_by(year, exporter_iso3, industry_id) %>%
+            summarise(total_exports = sum(trade, na.rm = T))
         ) %>%
-        collect(),
-      by = c("year", "exporter_iso3" = "country_iso3")
-    )
+        mutate(
+          trade_flag_code = case_when(
+            is.na(production_usd) ~ 4L # 4 means production = NA
+          ),
+          production_usd = case_when(
+            is.na(production_usd) ~ 0,
+            TRUE ~ production_usd
+          ),
 
-  # d_prod %>%
-  #   filter(is.na(value)) %>%
-  #   distinct(exporter_iso3, country_name)
+          trade_flag_code = case_when(
+            trade_flag_code == 4L & is.na(total_exports) ~ 5L, # 5 means exports = NA and production = NA
+            trade_flag_code == 4L & !is.na(total_exports) ~ 6L, # 6 means exports = NA and production != NA"
+            TRUE ~ trade_flag_code
+          ),
+          total_exports = case_when(
+            is.na(total_exports) ~ 0,
+            TRUE ~ total_exports
+          ),
 
-  d_prod <- d_prod %>%
-    select(-country_name) %>%
-    drop_na(value)
+          trade = production_usd - total_exports,
+          trade_flag_code = case_when(
+            trade < 0 ~ 7L, # 7 means production - trade < 0
+            TRUE ~ trade_flag_code
+          ),
+          trade = case_when(
+            trade < 0 ~ 0,
+            TRUE ~ trade
+          )
+        ) %>%
+        select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
 
-  d_prod <- d_prod %>%
-    mutate(production_usd = production_local_currency * value) %>%
-    select(-value)
-
-  ### Join with trade ---
-
-  d_prod <- d_prod %>%
-    full_join(
-      d_trade %>%
-        # remove domestic trade before substracting from production
-        filter(exporter_iso3 != importer_iso3) %>%
-        group_by(year, exporter_iso3, industry_id) %>%
-        summarise(total_exports = sum(trade, na.rm = T))
-    ) %>%
-    mutate(
-      trade_flag_code = case_when(
-        is.na(production_usd) ~ 4L # 4 means production = NA
-      ),
-      production_usd = case_when(
-        is.na(production_usd) ~ 0,
-        TRUE ~ production_usd
-      ),
-
-      trade_flag_code = case_when(
-        trade_flag_code == 4L & is.na(total_exports) ~ 5L, # 5 means exports = NA and production = NA
-        trade_flag_code == 4L & !is.na(total_exports) ~ 6L, # 6 means exports = NA and production != NA"
-        TRUE ~ trade_flag_code
-      ),
-      total_exports = case_when(
-        is.na(total_exports) ~ 0,
-        TRUE ~ total_exports
-      ),
-
-      trade = production_usd - total_exports,
-      trade_flag_code = case_when(
-        trade < 0 ~ 7L, # 7 means production - trade < 0
-        TRUE ~ trade_flag_code
-      ),
-      trade = case_when(
-        trade < 0 ~ 0,
-        TRUE ~ trade
-      )
-    ) %>%
-    select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
+      return(d)
+    }
+  )
 
   ## Combine tables ----
 
@@ -806,8 +834,8 @@ if (!"uncomtrade_trade_tidy" %in% dbListTables(con)) {
         select(year, exporter_iso3, importer_iso3, industry_id, trade, trade_flag_code)
     )
 
-  d_trade %>%
-    filter(exporter_iso3 == importer_iso3)
+  # d_trade %>%
+  #   filter(exporter_iso3 == importer_iso3)
 
   rm(d_prod)
 
