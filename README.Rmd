@@ -211,8 +211,10 @@ IMF: Domestic Currency per U.S. Dollar, Period Average, Rate (I assumed this is 
 
 # Download dates
 
-* UN COMTRADE data 2022-12-29
-* FAO 2022-10-24
+* UN COMTRADE data 2022-12-29 (updated 2023-03-07)
+* FAO 2022-10-24 (updated 2023-03-24)
 * UNIDO 2022-12-13
 * UN Data 2023-01-23 for Table 2.6 Output, gross value added and fixed assets by industries at current prices (ISIC Rev.4)
 * IMF 2022-01-23 for Domestic Currency per U.S. Dollar, Period Average, Rate
+
+REGARDING CHR COLS: Always use the text data type when storing strings in PostgreSQL. There is no performance benefit of using char(n) or varchar(n) https://maximorlov.com/char-varchar-text-postgresql/

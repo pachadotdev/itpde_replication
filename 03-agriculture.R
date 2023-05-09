@@ -24,7 +24,7 @@ if (length(list.files("inp/faostat_trade_matrix")) == 0) {
 
 # Download production data ----
 
-url_production_data <- "https://fenixservices.fao.org/faostat/static/bulkdownloads/Value_of_Production_E_All_Data.zip"
+url_production_data <- "https://fenix.fao.org/faostat/static/bulkdownload/zip_files/Value_of_Production_E_All_Data.zip"
 zip_production_data <- "inp/faostat_production_matrix.zip"
 
 try(dir.create("inp/", recursive = T))
@@ -202,12 +202,12 @@ if (!"uncomtrade_imports" %in% dbListTables(con)) {
   )
 
   map(
-    1988:2020,
+    1986:2020,
     function(y) {
       message(y)
 
       if (y < 1988) {
-        d <- tbl(con2, "sitc_rev2_tf_import_al_6") %>%
+        d <- tbl(con2, "sitc_rev2_tf_import_al_5") %>%
           filter(year == y) %>%
           filter(!(partner_iso %in% c("all","wld"))) %>%
           filter(commodity_code == "04211") %>%
@@ -254,12 +254,12 @@ if (!"uncomtrade_exports" %in% dbListTables(con)) {
   )
 
   map(
-    1988:2020,
+    1986:2020,
     function(y) {
       message(y)
 
       if (y < 1988) {
-        d <- tbl(con2, "sitc_rev2_tf_export_al_6") %>%
+        d <- tbl(con2, "sitc_rev2_tf_export_al_5") %>%
           filter(year == y) %>%
           filter(!(partner_iso %in% c("all","wld"))) %>%
           filter(commodity_code == "04211") %>%
@@ -568,10 +568,11 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
             "industry_id")
         ) %>%
         group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
-        summarise_if(is.numeric, sum, na.rm = T) %>%
-        mutate(trade = import_value_usd + export_value_usd) %>%
-        filter(trade > 0) %>%
-        select(-trade)
+        summarise_if(is.numeric, sum, na.rm = T)
+
+        # mutate(trade = import_value_usd + export_value_usd) %>%
+        # filter(trade > 0) %>%
+        # select(-trade)
 
       rm(d_aux_imp, d_aux_exp)
 
@@ -678,6 +679,41 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
     # here we select values in standard local currency
     select(year, producer_iso3, item_code, production_value_usd = current_us)
 
+  # fao_production_2 <- tbl(con, "fao_production_matrix") %>%
+  #   select(area_code, item_code, unit_code, year, value) %>%
+  #   filter(unit_code == 2) %>%
+  #   mutate(value = value * 1000) %>%
+  #   collect() %>%
+  #   drop_na(value) %>%
+  #
+  #   left_join(
+  #     tbl(con, "fao_production_matrix_unit_code") %>%
+  #       collect() %>%
+  #       mutate(unit = gsub("thousand ", "", unit)) # remove the 1000 bc we re-scaled before
+  #   ) %>%
+  #   select(-unit_code) %>%
+  #   pivot_wider(names_from = "unit", values_from = "value") %>%
+  #   clean_names() %>%
+  #
+  #   left_join(
+  #     tbl(con, "fao_country_correspondence") %>%
+  #       select(area_code = country_code, producer_iso3 = iso3_code) %>%
+  #       collect()
+  #   ) %>%
+  #
+  #   # here we select values in standard local currency
+  #   select(year, producer_iso3, item_code, production_value_slc = current_slc)
+  #
+  # fao_production %>%
+  #   group_by(year, producer_iso3) %>%
+  #   summarise(usd = sum(production_value_usd, na.rm = T)) %>%
+  #   full_join(
+  #     fao_production_2 %>%
+  #       group_by(year, producer_iso3) %>%
+  #       summarise(slc = sum(production_value_slc, na.rm = T))
+  #   ) %>%
+  #   View()
+
   ## Convert FCL to ITPD-E, filter and aggregate ----
 
   # Construct domestic trade. Domestic trade is calculated as the difference between the
@@ -694,6 +730,18 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
     group_by(year, producer_iso3, industry_id) %>%
     summarise_if(is.double, sum, na.rm = T) %>%
     ungroup()
+
+  # add circular flows to production number
+  fao_production <- fao_production %>%
+    bind_rows(
+      tbl(con, "fao_trade_tidy") %>%
+        filter(exporter_iso3 == importer_iso3) %>%
+        group_by(year, producer_iso3 = exporter_iso3, industry_id) %>%
+        summarise(production_value_usd = sum(export_value_usd, na.rm = T)) %>%
+        collect()
+    ) %>%
+    group_by(year, producer_iso3, industry_id) %>%
+    summarise(production_value_usd = sum(production_value_usd, na.rm = T))
 
   fao_production <- fao_production %>%
     rename(exporter_iso3 = producer_iso3) %>%
@@ -739,6 +787,9 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         TRUE ~ trade
       )
     )
+
+  # remove circular flows (i.e. importer = exporter) from DB before adding domestic flows
+  dbSendQuery(con, "delete from fao_trade_tidy where exporter_iso3 = importer_iso3")
 
   dbWriteTable(con, "fao_trade_tidy", fao_production, append = T, overwrite = F)
 
