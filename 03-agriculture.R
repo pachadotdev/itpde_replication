@@ -73,14 +73,13 @@ if (!"fao_trade" %in% dbListTables(con)) {
     distinct()
 
   fao_trade <- fao_trade %>%
-    select(-c(element, element_code_fao))
+    select(-c(element, item, item_code_cpc))
 
   fao_trade <- fao_trade %>%
-    select(-c(item, item_code_cpc))
-
-  fao_trade <- fao_trade %>%
-    select(-c(reporter_country_code_m49, reporter_countries,
-              partner_country_code_m49, partner_countries)) %>%
+    select(-c(
+      reporter_country_code_m49, reporter_countries,
+      partner_country_code_m49, partner_countries
+    )) %>%
     mutate(
       reporter_country_code = as.integer(reporter_country_code),
       partner_country_code = as.integer(partner_country_code)
@@ -180,7 +179,7 @@ if (!"uncomtrade_imports" %in% dbListTables(con)) {
   con2 <- dbConnect(
     Postgres(),
     host = "localhost",
-    dbname = "uncomtrade_commodities",
+    dbname = "uncomtrade",
     user = Sys.getenv("LOCAL_SQL_USR"),
     password = Sys.getenv("LOCAL_SQL_PWD")
   )
@@ -209,13 +208,13 @@ if (!"uncomtrade_imports" %in% dbListTables(con)) {
       if (y < 1988) {
         d <- tbl(con2, "sitc_rev2_tf_import_al_5") %>%
           filter(year == y) %>%
-          filter(!(partner_iso %in% c("all","wld"))) %>%
+          filter(!(partner_iso %in% c("all", "wld"))) %>%
           filter(commodity_code == "04211") %>%
           collect()
       } else {
         d <- tbl(con2, "hs_rev1992_tf_import_al_6") %>%
           filter(year == y) %>%
-          filter(!(partner_iso %in% c("all","wld"))) %>%
+          filter(!(partner_iso %in% c("all", "wld"))) %>%
           filter(commodity_code == "100610") %>%
           collect()
       }
@@ -232,7 +231,7 @@ if (!"uncomtrade_exports" %in% dbListTables(con)) {
   con2 <- dbConnect(
     Postgres(),
     host = "localhost",
-    dbname = "uncomtrade_commodities",
+    dbname = "uncomtrade",
     user = Sys.getenv("LOCAL_SQL_USR"),
     password = Sys.getenv("LOCAL_SQL_PWD")
   )
@@ -261,13 +260,13 @@ if (!"uncomtrade_exports" %in% dbListTables(con)) {
       if (y < 1988) {
         d <- tbl(con2, "sitc_rev2_tf_export_al_5") %>%
           filter(year == y) %>%
-          filter(!(partner_iso %in% c("all","wld"))) %>%
+          filter(!(partner_iso %in% c("all", "wld"))) %>%
           filter(commodity_code == "04211") %>%
           collect()
       } else {
         d <- tbl(con2, "hs_rev1992_tf_export_al_6") %>%
           filter(year == y) %>%
-          filter(!(partner_iso %in% c("all","wld"))) %>%
+          filter(!(partner_iso %in% c("all", "wld"))) %>%
           filter(commodity_code == "100610") %>%
           collect()
       }
@@ -389,6 +388,21 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
   dbSendQuery(
     con,
+    "CREATE TABLE fao_trade_domestic_tidy (
+    	year int4 NULL,
+    	exporter_iso3 text NULL,
+    	importer_iso3 text NULL,
+    	industry_id int4 NULL,
+    	export_value_usd float8 NULL,
+    	import_value_usd float8 NULL,
+    	production_value_usd float8 NULL,
+    	trade float8 NULL,
+    	trade_flag_code int4 NULL
+    )"
+  )
+
+  dbSendQuery(
+    con,
     "CREATE TABLE fao_trade_tidy_flag_code (
     	trade_flag_code int4 NULL,
     	trade_flag text NULL
@@ -396,6 +410,10 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
   )
 
   message("==== TRADE ====")
+
+  fao_country_correspondence <- tbl(con, "fao_country_correspondence") %>%
+    select(country_code, iso3_code) %>%
+    collect()
 
   fao_trade <- map(
     1986:2020,
@@ -408,7 +426,6 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         filter(year == y) %>%
         collect() %>%
         drop_na(value) %>%
-
         mutate(
           value = case_when(
             unit_code == 1L ~ value,
@@ -418,13 +435,11 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
             unit_code == 5L ~ value
           )
         ) %>%
-
         left_join(
           tbl(con, "fao_trade_element_code") %>%
             collect()
         ) %>%
         select(-element_code) %>%
-
         left_join(
           tbl(con, "fao_trade_unit_code") %>%
             collect() %>%
@@ -432,24 +447,16 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         ) %>%
         mutate(element = paste(element, unit)) %>%
         select(-unit, -unit_code) %>%
-
         pivot_wider(names_from = "element", values_from = "value") %>%
-        clean_names() %>%
-
-        rename(
-          import_value_usd = import_value_us,
-          export_value_usd = export_value_us
-        )
+        clean_names()
 
       d <- d %>%
-        select(reporter_country_code, partner_country_code, item_code, year,
-               starts_with("export"), starts_with("import"))
+        select(
+          reporter_country_code, partner_country_code, item_code, year,
+          starts_with("export"), starts_with("import")
+        )
 
       ## Convert country codes ----
-
-      fao_country_correspondence <- tbl(con, "fao_country_correspondence") %>%
-        select(country_code, iso3_code) %>%
-        collect()
 
       d <- d %>%
         left_join(
@@ -489,9 +496,11 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
           year == y,
           commodity_code == cmty_cd
         ) %>%
-        select(year, reporter_code, reporter_iso3 = reporter_iso,
-               partner_code, partner_iso3 = partner_iso,
-               import_value_usd = trade_value_usd) %>%
+        select(year, reporter_code,
+          reporter_iso3 = reporter_iso,
+          partner_code, partner_iso3 = partner_iso,
+          import_value_usd = trade_value_usd
+        ) %>%
         mutate(industry_id = 2L) %>%
         mutate(
           reporter_iso3 = toupper(case_when(
@@ -527,9 +536,11 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
           year == y,
           commodity_code == cmty_cd
         ) %>%
-        select(year, reporter_code, reporter_iso3 = reporter_iso,
-               partner_code, partner_iso3 = partner_iso,
-               export_value_usd = trade_value_usd) %>%
+        select(year, reporter_code,
+          reporter_iso3 = reporter_iso,
+          partner_code, partner_iso3 = partner_iso,
+          export_value_usd = trade_value_usd
+        ) %>%
         mutate(industry_id = 2L) %>%
         mutate(
           reporter_iso3 = toupper(case_when(
@@ -562,17 +573,15 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
       d_aux <- d_aux_imp %>%
         full_join(
-          d_aux_exp, by = c("year",
+          d_aux_exp,
+          by = c("year",
             "reporter_iso3" = "partner_iso3",
             "partner_iso3" = "reporter_iso3",
-            "industry_id")
+            "industry_id"
+          )
         ) %>%
         group_by(year, reporter_iso3, partner_iso3, industry_id) %>%
         summarise_if(is.numeric, sum, na.rm = T)
-
-        # mutate(trade = import_value_usd + export_value_usd) %>%
-        # filter(trade > 0) %>%
-        # select(-trade)
 
       rm(d_aux_imp, d_aux_exp)
 
@@ -595,8 +604,9 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
       d <- d %>%
         full_join(d2, by = c("year", "industry_id",
-                             "reporter_iso3" = "partner_iso3",
-                             "partner_iso3" = "reporter_iso3")) %>%
+          "reporter_iso3" = "partner_iso3",
+          "partner_iso3" = "reporter_iso3"
+        )) %>%
         mutate_if(is.double, function(x) ifelse(is.na(x), 0, x)) %>%
         mutate(
           trade = case_when(
@@ -621,26 +631,8 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       rm(d2)
 
       # trade in million
-      d  <- d %>%
+      d <- d %>%
         mutate(trade = trade / 1000000)
-
-      # if (!"export_quantity_no" %in% colnames(d)) {
-      #   d$export_quantity_no <- 0
-      # }
-      #
-      # if (!"import_quantity_no" %in% colnames(d)) {
-      #   d$import_quantity_no <- 0
-      # }
-      #
-      # d <- d %>%
-      #   rename(
-      #     export_quantity_no_unit = export_quantity_no,
-      #     import_quantity_no_unit = import_quantity_no
-      #   )
-      #
-      # d <- d[colnames(d) %in% c("year", "exporter_iso3", "importer_iso3",
-      #                           "industry_id", "trade", "flag_mirror",
-      #                           "flag_zero", "flag_flow")]
 
       dbWriteTable(con, "fao_trade_tidy", d, append = T, overwrite = F)
       rm(d)
@@ -650,7 +642,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
     }
   )
 
-  # Tidy production data (goes to same table as trade) ----
+  # Tidy production data ----
 
   message("==== PRODUCTION ====")
 
@@ -660,7 +652,6 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
     mutate(value = value * 1000) %>%
     collect() %>%
     drop_na(value) %>%
-
     left_join(
       tbl(con, "fao_production_matrix_unit_code") %>%
         collect() %>%
@@ -669,50 +660,13 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
     select(-unit_code) %>%
     pivot_wider(names_from = "unit", values_from = "value") %>%
     clean_names() %>%
-
     left_join(
       tbl(con, "fao_country_correspondence") %>%
         select(area_code = country_code, producer_iso3 = iso3_code) %>%
         collect()
     ) %>%
-
     # here we select values in standard local currency
     select(year, producer_iso3, item_code, production_value_usd = current_us)
-
-  # fao_production_2 <- tbl(con, "fao_production_matrix") %>%
-  #   select(area_code, item_code, unit_code, year, value) %>%
-  #   filter(unit_code == 2) %>%
-  #   mutate(value = value * 1000) %>%
-  #   collect() %>%
-  #   drop_na(value) %>%
-  #
-  #   left_join(
-  #     tbl(con, "fao_production_matrix_unit_code") %>%
-  #       collect() %>%
-  #       mutate(unit = gsub("thousand ", "", unit)) # remove the 1000 bc we re-scaled before
-  #   ) %>%
-  #   select(-unit_code) %>%
-  #   pivot_wider(names_from = "unit", values_from = "value") %>%
-  #   clean_names() %>%
-  #
-  #   left_join(
-  #     tbl(con, "fao_country_correspondence") %>%
-  #       select(area_code = country_code, producer_iso3 = iso3_code) %>%
-  #       collect()
-  #   ) %>%
-  #
-  #   # here we select values in standard local currency
-  #   select(year, producer_iso3, item_code, production_value_slc = current_slc)
-  #
-  # fao_production %>%
-  #   group_by(year, producer_iso3) %>%
-  #   summarise(usd = sum(production_value_usd, na.rm = T)) %>%
-  #   full_join(
-  #     fao_production_2 %>%
-  #       group_by(year, producer_iso3) %>%
-  #       summarise(slc = sum(production_value_slc, na.rm = T))
-  #   ) %>%
-  #   View()
 
   ## Convert FCL to ITPD-E, filter and aggregate ----
 
@@ -724,14 +678,19 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
   fao_production <- fao_production %>%
     inner_join(
       tbl(con, "usitc_fao_to_itpde") %>%
-        collect(), by = "item_code"
+        collect(),
+      by = "item_code"
     ) %>%
     select(-item_code) %>%
     group_by(year, producer_iso3, industry_id) %>%
     summarise_if(is.double, sum, na.rm = T) %>%
     ungroup()
 
+  fao_production %>%
+    filter(year == 2000L, producer_iso3 == "CHN", industry_id == 7L)
+
   # add circular flows to production number
+
   fao_production <- fao_production %>%
     bind_rows(
       tbl(con, "fao_trade_tidy") %>%
@@ -739,7 +698,9 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         group_by(year, producer_iso3 = exporter_iso3, industry_id) %>%
         summarise(production_value_usd = sum(export_value_usd, na.rm = T)) %>%
         collect()
-    ) %>%
+    )
+
+  fao_production <- fao_production %>%
     group_by(year, producer_iso3, industry_id) %>%
     summarise(production_value_usd = sum(production_value_usd, na.rm = T))
 
@@ -754,7 +715,9 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         group_by(year, exporter_iso3, industry_id) %>%
         summarise(export_value_usd = sum(trade, na.rm = T)) %>%
         collect()
-    ) %>%
+    )
+
+  fao_production <- fao_production %>%
     mutate(
       trade_flag_code = case_when(
         is.na(production_value_usd) ~ 4L # 4 means production = NA
@@ -763,7 +726,6 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         is.na(production_value_usd) ~ 0,
         TRUE ~ production_value_usd
       ),
-
       trade_flag_code = case_when(
         trade_flag_code == 4L & is.na(export_value_usd) ~ 5L, # 5 means exports = NA and production = NA
         trade_flag_code == 4L & !is.na(export_value_usd) ~ 6L, # 6 means exports = NA and production != NA"
@@ -777,7 +739,6 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       # trade in million
       production_value_usd = production_value_usd / 1000000,
       trade = production_value_usd - export_value_usd,
-
       trade_flag_code = case_when(
         trade < 0 ~ 7L, # 7 means production - trade < 0
         TRUE ~ trade_flag_code
@@ -788,10 +749,10 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       )
     )
 
-  # remove circular flows (i.e. importer = exporter) from DB before adding domestic flows
-  dbSendQuery(con, "delete from fao_trade_tidy where exporter_iso3 = importer_iso3")
+  fao_production %>%
+    filter(year == 2000L, exporter_iso3 == "CHN", industry_id == 7L)
 
-  dbWriteTable(con, "fao_trade_tidy", fao_production, append = T, overwrite = F)
+  dbWriteTable(con, "fao_trade_domestic_tidy", fao_production, append = T, overwrite = F)
 
   # add table with flags
   fao_trade_tidy_flag_code <- tibble(
@@ -803,13 +764,64 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       "production = NA",
       "exports = NA and production = NA",
       "exports = NA and production != NA",
-      "production - trade < 0")
+      "production - trade < 0"
+    )
   )
-
-  # dbSendQuery(con, "delete from fao_trade_tidy where exporter_iso3 = importer_iso3")
 
   dbWriteTable(con, "fao_trade_tidy_flag_code", fao_trade_tidy_flag_code, append = T, overwrite = F)
   gc()
 }
 
+# Verification ----
+
+# d <- tbl(con, "fao_trade_tidy") %>%
+#   filter(year == 2000L) %>%
+#   select(year, exporter_iso3, importer_iso3, industry_id, trade.y = trade) %>%
+#   left_join(
+#     tbl(con, "usitc_trade") %>%
+#       filter(year == 2000L) %>%
+#       select(year, exporter_iso3, importer_iso3, industry_id, trade.x = trade)
+#   ) %>%
+#   collect()
+
+# d %>%
+#   mutate(
+#     diff = trade.y - trade.x
+#   ) %>%
+#   filter(diff != 0) %>%
+#   arrange(-abs(diff))
+
+# d2 <- tbl(con, "fao_trade_domestic_tidy") %>%
+#   filter(year == 2000L) %>%
+#   select(year, exporter_iso3, importer_iso3, industry_id, trade.y = trade)
+
+d <- tbl(con, "fao_trade_tidy") %>%
+  filter(year == 2000L) %>%
+  select(year, exporter_iso3, importer_iso3, industry_id, trade.y1 = trade) %>%
+  left_join(
+    tbl(con, "fao_trade_domestic_tidy") %>%
+      filter(year == 2000L) %>%
+      select(year, exporter_iso3, importer_iso3, industry_id, trade.y2 = trade)
+  ) %>%
+  mutate(
+    trade.y2 = ifelse(is.na(trade.y2), 0, trade.y2),
+    trade.y = trade.y1 + trade.y2
+  ) %>%
+  left_join(
+    tbl(con, "usitc_trade") %>%
+      filter(year == 2000L) %>%
+      select(year, exporter_iso3, importer_iso3, industry_id, trade.x = trade)
+  ) %>%
+  select(year, exporter_iso3, importer_iso3, industry_id, trade.y, trade.x) %>%
+  collect()
+
+d %>%
+  mutate(
+    diff = trade.y - trade.x
+  ) %>%
+  filter(diff != 0) %>%
+  arrange(-abs(diff))
+
 dbDisconnect(con)
+
+glimpse(tradepolicy::agtpa_applications)
