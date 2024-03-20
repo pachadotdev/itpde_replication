@@ -48,7 +48,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
           tbl(con, "fao_trade_element_code") %>%
             mutate(element = tolower(str_replace_all(element, " ", "_")))
         ) %>%
-        select(-element_code) %>%
+        select(-c(element_code, flag)) %>%
         collect() %>%
         pivot_wider(names_from = "element", values_from = "value")
 
@@ -169,8 +169,8 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
         full_join(
           d_aux_exp,
           by = c("year",
-            "reporter_iso3" = "partner_iso3",
-            "partner_iso3" = "reporter_iso3",
+            "reporter_iso3",
+            "partner_iso3",
             "industry_id"
           )
         )
@@ -242,7 +242,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
     )
   )
 
-  dbWriteTable(con, "fao_trade_tidy_flag_code", fao_trade_tidy_flag_code, append = T, overwrite = F)
+  dbWriteTable(con, "fao_trade_tidy_flag_code", fao_trade_tidy_flag_code, overwrite = T)
 }
 
 ## Production ----
@@ -358,11 +358,26 @@ tbl(con, "fao_trade_tidy") %>%
 
 tbl(con, "usitc_trade") %>%
   filter(year == 2000L) %>%
-  select(year, exporter_iso3, importer_iso3, industry_id, trade.x = trade) %>%
-  filter(industry_id == 7L, exporter_iso3 == "CHN") %>%
-  mutate(importer_iso = case_when(
-    importer_iso3 == "CHN" ~ "CHN",
-    TRUE ~ "REST"
-  )) %>%
-  group_by(year, exporter_iso3, importer_iso) %>%
-  summarise(trade = sum(trade.x, na.rm = T))
+  group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
+  summarise(trade = sum(trade, na.rm = T)) %>%
+  ungroup() %>%
+  collect() %>%
+  full_join(
+    tbl(con, "fao_trade_domestic_tidy") %>%
+      filter(year == 2000L) %>%
+      group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
+      summarise(trade = sum(trade, na.rm = T) / 1000000) %>%
+      ungroup() %>%
+      collect() %>%
+      bind_rows(
+        tbl(con, "fao_trade_tidy") %>%
+          filter(year == 2000L) %>%
+          group_by(year, exporter_iso3, importer_iso3, industry_id) %>%
+          summarise(trade = sum(trade, na.rm = T) / 1000000) %>%
+          ungroup() %>%
+          collect()
+      ),
+    by = c("year", "exporter_iso3", "importer_iso3", "industry_id")
+  ) %>%
+  filter(trade.x != trade.y) %>%
+  arrange(desc(abs(trade.x - trade.y)))
