@@ -9,12 +9,12 @@ if (!all(c("uncomtrade_imports", "uncomtrade_exports") %in% dbListTables(con))) 
     password = Sys.getenv("LOCAL_SQL_PWD")
   )
 
-  map(
+  ### UNCOMTRADE imports ----
+
+  dimp <- map_df(
     1986:2020,
     function(y) {
       message(y)
-
-      # UNCOMTRADE imports ----
 
       if (y < 1988) {
         d <- tbl(con2, "sitc_rev2_tf_import_al_5") %>%
@@ -30,9 +30,19 @@ if (!all(c("uncomtrade_imports", "uncomtrade_exports") %in% dbListTables(con))) 
           collect()
       }
 
-      dbWriteTable(con, "uncomtrade_imports", d, append = T)
+      d
+    }
+  )
 
-      # UNCOMTRADE exports ----
+  saveRDS(dimp, "out/uncomtrade_imports.rds")
+  dbWriteTable(con, "uncomtrade_imports", dimp, overwrite = T)
+
+  ### UNCOMTRADE exports ----
+
+  dexp <- map_df(
+    1986:2020,
+    function(y) {
+      message(y)
 
       if (y < 1988) {
         d <- tbl(con2, "sitc_rev2_tf_export_al_5") %>%
@@ -48,9 +58,12 @@ if (!all(c("uncomtrade_imports", "uncomtrade_exports") %in% dbListTables(con))) 
           collect()
       }
 
-      dbWriteTable(con, "uncomtrade_exports", d, append = T)
+      d
     }
   )
+
+  saveRDS(dexp, "out/uncomtrade_exports.rds")
+  dbWriteTable(con, "uncomtrade_exports", dexp, overwrite = T)
 
   dbDisconnect(con2)
   rm(con2)

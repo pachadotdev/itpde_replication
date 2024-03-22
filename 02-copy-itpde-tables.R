@@ -124,6 +124,13 @@ if (!"usitc_trade" %in% dbListTables(con)) {
   trade <- trade %>%
     mutate(flag_mirror = as.integer(flag_mirror))
 
+  try(dir.create("out"))
+
+  saveRDS(trade, "out/usitc_trade.rds")
+  saveRDS(country_names, "out/usitc_country_codes.rds")
+  saveRDS(industry_names, "out/usitc_industry_names.rds")
+  saveRDS(sector_names, "out/usitc_sector_names.rds")
+
   trade <- trade %>%
     group_by(year) %>%
     nest()
