@@ -1,28 +1,47 @@
 ## Production ----
 
-if ("fao_trade_domestic_tidy" %in% dbListTables(con)) {
-  dbRemoveTable(con, "fao_trade_domestic_tidy")
-}
+message("==== FAO PRODUCTION ====")
+
+# tbl(con, "fao_production_area_code") %>%
+#   anti_join(
+#     tbl(con, "fao_trade_country_code") %>%
+#       select(area_code = country_code, area = country)
+#   ) %>%
+#   collect() %>%
+#   pull(area)
+
+# tbl(con, "fao_trade_country_code") %>%
+#   filter(country_code == 41)
 
 if (!"fao_trade_domestic_tidy" %in% dbListTables(con)) {
-  message("==== FAO PRODUCTION ====")
-
   ### read ----
 
   # tbl(con, "fao_production_unit_code")
 
-  fao_production <- tbl(con, "fao_production") %>%
-    select(area_code, item_code, unit_code, year, value) %>%
-    filter(year >= 1986L, unit_code == 3) %>%
-    mutate(value = value * 1000) %>%
-    group_by(year, area_code, item_code) %>%
-    summarise(value = sum(value, na.rm = T)) %>%
-    inner_join(
-      tbl(con, "fao_country_correspondence") %>%
-        select(area_code = country_code, producer_iso3 = iso3_code)
-    ) %>%
-    select(year, producer_iso3, item_code, production_value_usd = value) %>%
-    collect()
+  fao_production <- map_df(
+    1986:2020,
+    function(y) {
+      message(y)
+      tbl(con, "fao_production") %>%
+        select(area_code, item_code, unit_code, year, value) %>%
+        filter(year == y, unit_code == 3) %>%
+        mutate(value = value * 1000) %>%
+        group_by(year, area_code, item_code) %>%
+        summarise(value = sum(value, na.rm = T)) %>%
+        ungroup() %>%
+        collect() %>%
+        inner_join(
+          fao_country_correspondence %>%
+            filter(year == y) %>%
+            select(
+              area_code = country_code,
+              producer_iso3 = country_iso3,
+              producer_dynamic_code = country_dynamic_code
+            )
+        ) %>%
+        select(year, producer_iso3, item_code, production_value_usd = value)
+    }
+  )
 
   # fao_production %>%
   #   group_by(year, producer_iso3, item_code) %>%
@@ -97,5 +116,5 @@ if (!"fao_trade_domestic_tidy" %in% dbListTables(con)) {
       )
     )
 
-  dbWriteTable(con, "fao_trade_domestic_tidy", fao_production, overwrite = T, append = F)
+  dbWriteTable(con, "fao_trade_domestic_tidy", fao_production, overwrite = T)
 }

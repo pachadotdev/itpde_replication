@@ -42,8 +42,11 @@ if (!"fao_production" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       area_code = as.integer(area_code),
-      area = iconv(as.character(area), to = "ASCII//TRANSLIT")
+      area = iconv(as.character(area), to = "UTF-8", sub = "")
     )
+
+  # fao_production_area_code %>%
+  #   filter(area_code == 107)
 
   saveRDS(fao_production_area_code, "out/fao_production_area_code.rds")
 
@@ -52,7 +55,7 @@ if (!"fao_production" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       area_code_m49 = gsub("\'", "", as.character(area_code_m49)),
-      area = iconv(as.character(area), to = "ASCII//TRANSLIT")
+      area = iconv(as.character(area), to = "UTF-8", sub = "")
     )
 
   saveRDS(fao_production_area_code_m49, "out/fao_production_area_code_m49.rds")
@@ -68,7 +71,7 @@ if (!"fao_production" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       item_code = as.integer(item_code),
-      item = iconv(item, to = "ASCII//TRANSLIT")
+      item = iconv(item, to = "UTF-8", sub = "")
     )
 
   saveRDS(fao_production_item_code, "out/fao_production_item_code.rds")
@@ -78,7 +81,7 @@ if (!"fao_production" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       item_code_cpc = as.character(gsub("\'", "", item_code_cpc)),
-      item = iconv(item, to = "ASCII//TRANSLIT")
+      item = iconv(item, to = "UTF-8", sub = "")
     )
 
   saveRDS(fao_production_item_code_cpc, "out/fao_production_item_code_cpc.rds")
@@ -94,7 +97,7 @@ if (!"fao_production" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       element_code = as.integer(element_code),
-      element = iconv(element, to = "ASCII//TRANSLIT")
+      element = iconv(element, to = "UTF-8", sub = "")
     )
 
   saveRDS(fao_production_element_code, "out/fao_production_element_code.rds")

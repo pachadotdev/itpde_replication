@@ -139,11 +139,6 @@ if (!"usitc_trade" %in% dbListTables(con)) {
 
   gc()
 
-  # drop usitc_trade if exists
-  if ("usitc_trade" %in% dbListTables(con)) {
-    dbRemoveTable(con, "usitc_trade")
-  }
-
   # copy year by year
   map(
     1986:2020,

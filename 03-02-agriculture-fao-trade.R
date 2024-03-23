@@ -25,7 +25,7 @@ if (!"fao_trade" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       reporter_country_code = as.integer(reporter_country_code),
-      reporter_countries = iconv(as.character(reporter_countries), to = "ASCII//TRANSLIT")
+      reporter_countries = iconv(as.character(reporter_countries), to = "UTF-8", sub = "")
     )
 
   fao_reporter_country_code_m49 <- fao_trade %>%
@@ -33,7 +33,7 @@ if (!"fao_trade" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       reporter_country_code_m49 = gsub("\'", "", as.character(reporter_country_code_m49)),
-      reporter_countries = iconv(as.character(reporter_countries), to = "ASCII//TRANSLIT")
+      reporter_countries = iconv(as.character(reporter_countries), to = "UTF-8", sub = "")
     )
 
   fao_trade <- fao_trade %>%
@@ -45,7 +45,7 @@ if (!"fao_trade" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       partner_country_code = as.integer(partner_country_code),
-      partner_countries = iconv(as.character(partner_countries), to = "ASCII//TRANSLIT")
+      partner_countries = iconv(as.character(partner_countries), to = "UTF-8", sub = "")
     )
 
   fao_partner_country_code_m49 <- fao_trade %>%
@@ -53,7 +53,7 @@ if (!"fao_trade" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       partner_country_code_m49 = as.character(gsub("\'", "", partner_country_code_m49)),
-      partner_countries = iconv(as.character(partner_countries), to = "ASCII//TRANSLIT")
+      partner_countries = iconv(as.character(partner_countries), to = "UTF-8", sub = "")
     )
 
   fao_trade <- fao_trade %>%
@@ -89,7 +89,7 @@ if (!"fao_trade" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       item_code = as.integer(item_code),
-      item = iconv(item, to = "ASCII//TRANSLIT")
+      item = iconv(item, to = "UTF-8", sub = "")
     )
 
   saveRDS(fao_trade_item_code, "out/fao_trade_item_code.rds")
@@ -99,7 +99,7 @@ if (!"fao_trade" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       item_code_cpc = gsub("\'", "", as.character(item_code_cpc)),
-      item = iconv(item, to = "ASCII//TRANSLIT")
+      item = iconv(item, to = "UTF-8", sub = "")
     )
 
   saveRDS(fao_trade_item_code_cpc, "out/fao_trade_item_code_cpc.rds")
@@ -115,7 +115,7 @@ if (!"fao_trade" %in% dbListTables(con)) {
     distinct() %>%
     mutate(
       element_code = as.integer(element_code),
-      element = iconv(element, to = "ASCII//TRANSLIT")
+      element = iconv(element, to = "UTF-8", sub = "")
     )
 
   saveRDS(fao_trade_element_code, "out/fao_trade_element_code.rds")
@@ -168,11 +168,6 @@ if (!"fao_trade" %in% dbListTables(con)) {
   fao_trade <- fao_trade %>%
     group_by(year) %>%
     nest()
-
-  # drop fao_trade if exists
-  if ("fao_trade" %in% dbListTables(con)) {
-    dbRemoveTable(con, "fao_trade")
-  }
 
   map(
     pull(fao_trade, year),
