@@ -1,5 +1,9 @@
 ## Trade ----
 
+if ("fao_trade_tidy" %in% dbListTables(con)) {
+  dbRemoveTable(con, "fao_trade_tidy")
+}
+
 if (!"fao_trade_tidy" %in% dbListTables(con)) {
   message("==== FAO TRADE ====")
 
@@ -14,6 +18,8 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
       ## Convert long to wide and tidy units ----
 
+      # tbl(con, "fao_trade_unit_code")
+
       d <- tbl(con, "fao_trade") %>%
         filter(year == y, element_code %in% c(5622L, 5922L)) %>%
         mutate(value = value * 1000) %>% # see tbl fao_trade_unit_code
@@ -21,19 +27,25 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
           tbl(con, "fao_trade_element_code") %>%
             mutate(element = tolower(str_replace_all(element, " ", "_")))
         ) %>%
-        select(-c(element_code, flag)) %>%
+        select(-c(element_code, flag_id)) %>%
         collect() %>%
         pivot_wider(names_from = "element", values_from = "value")
 
       ## Convert country codes ----
 
+      # fao_country_correspondence %>%
+      #   rename(reporter_iso3 = iso3_code) %>%
+      #   group_by(country_code) %>%
+      #   summarise(n = n()) %>%
+      #   filter(n > 1)
+
       d <- d %>%
-        left_join(
+        inner_join(
           fao_country_correspondence %>%
             rename(reporter_iso3 = iso3_code),
           by = c("reporter_country_code" = "country_code")
         ) %>%
-        left_join(
+        inner_join(
           fao_country_correspondence %>%
             rename(partner_iso3 = iso3_code),
           by = c("partner_country_code" = "country_code")
@@ -62,94 +74,68 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
       # use SITC 2 before 1988
       cmty_cd <- ifelse(y < 1988, "04211", "100610")
 
-      d_aux_imp <- tbl(con, "uncomtrade_imports") %>%
-        filter(
-          year == y,
-          commodity_code == cmty_cd
-        ) %>%
+      d_aux <- tbl(con, "uncomtrade_imports") %>%
+        filter(year == y, commodity_code == cmty_cd) %>%
         select(year, reporter_code,
           reporter_iso3 = reporter_iso,
           partner_code, partner_iso3 = partner_iso,
           import_value_usd = trade_value_usd
         ) %>%
-        mutate(industry_id = 2L) %>%
-        mutate(
-          reporter_iso3 = toupper(case_when(
-            reporter_code == 490L ~ "TWN",
-            reporter_iso3 %in% c("DRC", "ZAR") ~ "COD",
-            reporter_iso3 == "ROM" ~ "ROU",
-            TRUE ~ reporter_iso3
-          )),
-          partner_iso3 = toupper(case_when(
-            partner_code == 490L ~ "TWN",
-            partner_iso3 %in% c("DRC", "ZAR") ~ "COD",
-            partner_iso3 == "ROM" ~ "ROU",
-            TRUE ~ partner_iso3
-          ))
-        ) %>%
-        select(-reporter_code, -partner_code) %>%
-        inner_join(
-          tbl(con, "usitc_country_codes") %>%
-            distinct() %>%
-            rename(reporter_iso3 = country_iso3)
-        ) %>%
-        inner_join(
-          tbl(con, "usitc_country_codes") %>%
-            distinct() %>%
-            rename(partner_iso3 = country_iso3)
-        ) %>%
-        collect()
-
-      d_aux_exp <- tbl(con, "uncomtrade_exports") %>%
-        filter(
-          year == y,
-          commodity_code == cmty_cd
-        ) %>%
-        select(year, reporter_code,
-          reporter_iso3 = reporter_iso,
-          partner_code, partner_iso3 = partner_iso,
-          export_value_usd = trade_value_usd
-        ) %>%
-        mutate(industry_id = 2L) %>%
-        mutate(
-          reporter_iso3 = toupper(case_when(
-            reporter_code == 490L ~ "TWN",
-            reporter_iso3 %in% c("DRC", "ZAR") ~ "COD",
-            reporter_iso3 == "ROM" ~ "ROU",
-            TRUE ~ reporter_iso3
-          )),
-          partner_iso3 = toupper(case_when(
-            partner_code == 490L ~ "TWN",
-            partner_iso3 %in% c("DRC", "ZAR") ~ "COD",
-            partner_iso3 == "ROM" ~ "ROU",
-            TRUE ~ partner_iso3
-          ))
-        ) %>%
-        select(-reporter_code, -partner_code) %>%
-        inner_join(
-          tbl(con, "usitc_country_codes") %>%
-            distinct() %>%
-            rename(reporter_iso3 = country_iso3)
-        ) %>%
-        inner_join(
-          tbl(con, "usitc_country_codes") %>%
-            distinct() %>%
-            rename(partner_iso3 = country_iso3)
-        ) %>%
-        collect()
-
-      d_aux <- d_aux_imp %>%
         full_join(
-          d_aux_exp,
-          by = c(
-            "year",
-            "reporter_iso3",
-            "partner_iso3",
-            "industry_id"
-          )
-        )
+          tbl(con, "uncomtrade_exports") %>%
+            filter(year == y, commodity_code == cmty_cd) %>%
+            select(year, reporter_code,
+              reporter_iso3 = reporter_iso,
+              partner_code, partner_iso3 = partner_iso,
+              export_value_usd = trade_value_usd
+            )
+        ) %>%
+        mutate(
+          reporter_iso3 = toupper(case_when(
+            reporter_code == 490L ~ "TWN",
+            reporter_iso3 %in% c("DRC", "ZAR") ~ "COD",
+            reporter_iso3 == "ROM" ~ "ROU",
+            TRUE ~ reporter_iso3
+          )),
+          partner_iso3 = toupper(case_when(
+            partner_code == 490L ~ "TWN",
+            partner_iso3 %in% c("DRC", "ZAR") ~ "COD",
+            partner_iso3 == "ROM" ~ "ROU",
+            TRUE ~ partner_iso3
+          ))
+        ) %>%
+        select(-reporter_code, -partner_code) %>%
+        group_by(year, reporter_iso3, partner_iso3) %>%
+        summarise(
+          import_value_usd = sum(import_value_usd, na.rm = T),
+          export_value_usd = sum(export_value_usd, na.rm = T)
+        ) %>%
+        ungroup() %>%
+        mutate(industry_id = 2L) %>%
+        inner_join(
+          tbl(con, "usitc_country_codes") %>%
+            filter(year == y) %>%
+            rename(
+              reporter_iso3 = country_iso3,
+              reporter_dynamic_code = country_dynamic_code,
+              reporter_name = country_name
+            )
+        ) %>%
+        inner_join(
+          tbl(con, "usitc_country_codes") %>%
+            distinct() %>%
+            rename(
+              partner_iso3 = country_iso3,
+              partner_dynamic_code = country_dynamic_code,
+              partner_name = country_name
+            )
+        ) %>%
+        collect()
 
-      rm(d_aux_imp, d_aux_exp)
+      # d_aux %>%
+      #   group_by(reporter_iso3, partner_iso3) %>%
+      #   summarise(n = n()) %>%
+      #   filter(n > 1)
 
       d <- d %>%
         bind_rows(d_aux) %>%
@@ -195,7 +181,7 @@ if (!"fao_trade_tidy" %in% dbListTables(con)) {
 
       rm(d2)
 
-      dbWriteTable(con, "fao_trade_tidy", d, append = T, overwrite = F)
+      dbWriteTable(con, "fao_trade_tidy", d, append = T)
       gc()
 
       return(TRUE)

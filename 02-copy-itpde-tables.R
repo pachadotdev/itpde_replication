@@ -28,33 +28,34 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     # this table is to compare replication values later
     # this file is super heavy and takes a lot of time to read
     # it crashed pandas :(
-    trade <- read_csv(
+    usitc_trade <- read_csv(
       paste0(finp, "/ITPD_E_R02.csv"),
       col_types = cols(
         year = col_integer(),
         industry_id = col_integer(),
-        trade = col_double()
+        usitc_trade = col_double()
       )
     )
 
     # reduce weight a bit using factors
-    trade <- trade %>%
+    usitc_trade <- usitc_trade %>%
       mutate_if(is.character, as.factor)
 
     gc()
 
-    saveRDS(trade, paste0(finp, "/ITPD_E_R02.rds"))
+    saveRDS(usitc_trade, paste0(finp, "/ITPD_E_R02.rds"))
 
     try(file.remove(paste0(finp, "/ITPD_E_R02.csv")))
 
     gc()
   } else {
-    trade <- readRDS(paste0(finp, "/ITPD_E_R02.rds"))
+    usitc_trade <- readRDS(paste0(finp, "/ITPD_E_R02.rds"))
   }
 
   # this table is to avoid writing special country codes that we won't need
-  country_names <- trade %>%
+  usitc_country_codes <- usitc_trade %>%
     select(
+      year,
       country_iso3 = exporter_iso3,
       country_dynamic_code = exporter_dynamic_code,
       country_name = exporter_name
@@ -62,8 +63,9 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     distinct() %>%
     mutate_if(is.factor, as.character) %>%
     bind_rows(
-      trade %>%
+      usitc_trade %>%
         select(
+          year,
           country_iso3 = importer_iso3,
           country_dynamic_code = importer_dynamic_code,
           country_name = importer_name
@@ -74,23 +76,23 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     distinct() %>%
     arrange(country_iso3)
 
-  dbWriteTable(con, "usitc_country_codes", country_names, overwrite = T)
+  dbWriteTable(con, "usitc_country_codes", usitc_country_codes, overwrite = T)
 
-  trade <- trade %>%
+  usitc_trade <- usitc_trade %>%
     select(-exporter_name, -importer_name)
 
   # just for references
-  industry_names <- trade %>%
+  usitc_industry_names <- usitc_trade %>%
     select(industry_id, industry_descr) %>%
     distinct() %>%
     mutate_if(is.factor, as.character)
 
-  dbWriteTable(con, "usitc_industry_names", industry_names, overwrite = T)
+  dbWriteTable(con, "usitc_industry_names", usitc_industry_names, overwrite = T)
 
-  trade <- trade %>%
+  usitc_trade <- usitc_trade %>%
     select(-industry_descr)
 
-  sector_names <- trade %>%
+  usitc_sector_names <- usitc_trade %>%
     select(broad_sector) %>%
     distinct() %>%
     mutate_if(is.factor, as.character) %>%
@@ -98,9 +100,9 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     mutate(broad_sector_id = row_number()) %>%
     select(broad_sector_id, broad_sector)
 
-  dbWriteTable(con, "usitc_sector_names", sector_names, overwrite = T)
+  dbWriteTable(con, "usitc_sector_names", usitc_sector_names, overwrite = T)
 
-  trade <- trade %>%
+  usitc_trade <- usitc_trade %>%
     mutate(
       broad_sector_id = case_when(
         broad_sector == "Agriculture" ~ 1L,
@@ -111,27 +113,27 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     ) %>%
     select(-broad_sector)
 
-  trade <- trade %>%
+  usitc_trade <- usitc_trade %>%
     select(
       year,
       exporter_iso3, importer_iso3,
       exporter_dynamic_code, importer_dynamic_code,
       broad_sector_id, industry_id,
       flag_mirror, flag_zero,
-      trade
+      usitc_trade
     )
 
-  trade <- trade %>%
+  usitc_trade <- usitc_trade %>%
     mutate(flag_mirror = as.integer(flag_mirror))
 
   try(dir.create("out"))
 
-  saveRDS(trade, "out/usitc_trade.rds")
-  saveRDS(country_names, "out/usitc_country_codes.rds")
-  saveRDS(industry_names, "out/usitc_industry_names.rds")
-  saveRDS(sector_names, "out/usitc_sector_names.rds")
+  saveRDS(usitc_trade, "out/usitc_trade.rds")
+  saveRDS(usitc_country_codes, "out/usitc_country_codes.rds")
+  saveRDS(usitc_industry_names, "out/usitc_industry_names.rds")
+  saveRDS(usitc_sector_names, "out/usitc_sector_names.rds")
 
-  trade <- trade %>%
+  usitc_trade <- usitc_trade %>%
     group_by(year) %>%
     nest()
 
@@ -148,7 +150,7 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     function(y) {
       message(y)
 
-      d <- trade %>%
+      d <- usitc_trade %>%
         filter(year == y) %>%
         unnest(data) %>%
         mutate_if(is.factor, as.character)
@@ -157,7 +159,7 @@ if (!"usitc_trade" %in% dbListTables(con)) {
     }
   )
 
-  rm(trade, country_names, industry_names, sector_names)
+  rm(usitc_trade, usitc_country_codes, usitc_industry_names, usitc_sector_names)
   gc()
 }
 

@@ -41,4 +41,16 @@ tbl(con, "usitc_trade") %>%
   mutate(pct_diff = 100 * (trade.original - trade.pacha) / trade.original) %>%
   select(-year)
 
+tbl(con, "usitc_trade") %>%
+  filter(year == 2000L, exporter_iso3 == "CHN", importer_iso3 == "CHN", industry_id == 13L) %>%
+  select(trade)
+
+tbl(con, "fao_trade_tidy") %>%
+  filter(year == 2000L, exporter_iso3 == "CHN", importer_iso3 == "CHN", industry_id == 13L) %>%
+  select(trade)
+
+tbl(con, "fao_trade_domestic_tidy") %>%
+  filter(year == 2000L, exporter_iso3 == "CHN", importer_iso3 == "CHN", industry_id == 13L) %>%
+  select(trade)
+
 dbDisconnect(con)

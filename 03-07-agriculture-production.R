@@ -1,20 +1,33 @@
 ## Production ----
 
+if ("fao_trade_domestic_tidy" %in% dbListTables(con)) {
+  dbRemoveTable(con, "fao_trade_domestic_tidy")
+}
+
 if (!"fao_trade_domestic_tidy" %in% dbListTables(con)) {
   message("==== FAO PRODUCTION ====")
 
   ### read ----
 
+  # tbl(con, "fao_production_unit_code")
+
   fao_production <- tbl(con, "fao_production") %>%
     select(area_code, item_code, unit_code, year, value) %>%
-    filter(unit_code == 3) %>%
+    filter(year >= 1986L, unit_code == 3) %>%
     mutate(value = value * 1000) %>%
+    group_by(year, area_code, item_code) %>%
+    summarise(value = sum(value, na.rm = T)) %>%
     inner_join(
       tbl(con, "fao_country_correspondence") %>%
         select(area_code = country_code, producer_iso3 = iso3_code)
     ) %>%
     select(year, producer_iso3, item_code, production_value_usd = value) %>%
     collect()
+
+  # fao_production %>%
+  #   group_by(year, producer_iso3, item_code) %>%
+  #   summarise(n = n()) %>%
+  #   filter(n > 1)
 
   ### convert FCL to ITPD-E, filter and aggregate ----
 
@@ -36,10 +49,10 @@ if (!"fao_trade_domestic_tidy" %in% dbListTables(con)) {
     summarise(production_value_usd = sum(production_value_usd, na.rm = T)) %>%
     ungroup()
 
-  ### subset 1986+ ----
-
-  fao_production <- fao_production %>%
-    filter(year >= 1986L)
+  # fao_production %>%
+  #   group_by(year, producer_iso3, industry_id) %>%
+  #   summarise(n = n()) %>%
+  #   filter(n > 1)
 
   ### remove exports from production ----
 
@@ -47,15 +60,17 @@ if (!"fao_trade_domestic_tidy" %in% dbListTables(con)) {
     left_join(
       tbl(con, "fao_trade_tidy") %>%
         group_by(year, producer_iso3 = exporter_iso3, industry_id) %>%
-        summarise(export_value_usd = sum(trade, na.rm = T)) %>%
-        collect(),
-      by = c("year", "producer_iso3", "industry_id")
+        summarise(export_value_usd = -1.0 * sum(trade, na.rm = T)) %>%
+        collect()
     ) %>%
     rowwise() %>%
-    mutate(
-      trade = sum(production_value_usd, -1.0 * export_value_usd, na.rm = T)
-    ) %>%
+    mutate(trade = sum(production_value_usd, export_value_usd, na.rm = T)) %>%
     ungroup()
+
+  # the article says that if trade < 0, we should remove the observation
+
+  fao_production <- fao_production %>%
+    filter(trade >= 0)
 
   fao_production <- fao_production %>%
     rename(exporter_iso3 = producer_iso3) %>%
@@ -64,25 +79,17 @@ if (!"fao_trade_domestic_tidy" %in% dbListTables(con)) {
 
   fao_production <- fao_production %>%
     mutate(
-      trade_flag_code = case_when(
-        is.na(production_value_usd) ~ 4L # 4 means production = NA
-      ),
       production_value_usd = case_when(
         is.na(production_value_usd) ~ 0,
         TRUE ~ production_value_usd
       ),
       trade_flag_code = case_when(
-        trade_flag_code == 4L & is.na(export_value_usd) ~ 5L, # 5 means exports = NA and production = NA
-        trade_flag_code == 4L & !is.na(export_value_usd) ~ 6L, # 6 means exports = NA and production != NA"
-        TRUE ~ trade_flag_code
+        is.na(export_value_usd) ~ 5L, # 5 means exports = NA and production = NA
+        !is.na(export_value_usd) ~ 6L # 6 means exports = NA and production != NA"
       ),
       export_value_usd = case_when(
         is.na(export_value_usd) ~ 0,
         TRUE ~ export_value_usd
-      ),
-      trade_flag_code = case_when(
-        trade < 0 ~ 7L, # 7 means production - trade < 0
-        TRUE ~ trade_flag_code
       ),
       trade = case_when(
         is.na(trade) | trade < 0 ~ 0,
